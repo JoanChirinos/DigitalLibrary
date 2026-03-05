@@ -13,12 +13,19 @@
     return date.toLocaleDateString();
   }
 
+  function utcToLocalDateTime(utc: string): string {
+    const date = new Date(utc.endsWith('Z') ? utc : utc + 'Z');
+    return date.toLocaleString();
+  }
+
   let sortBy = $state<'title' | 'author' | 'recent'>('author');
   let selectedTags = $state<number[]>([]);
   let searchQuery = $state('');
 
   // Edit state
   let editingId = $state<number | null>(null);
+  let detailBook = $state<Book | null>(null);
+  let deleteConfirmBook = $state<Book | null>(null);
   let editTitle = $state('');
   let editIsbn = $state('');
   let editCoverUrl = $state('');
@@ -181,6 +188,7 @@
   async function handleDelete(id: number) {
     await deleteBook(id);
     await loadBooks();
+    deleteConfirmBook = null;
   }
 </script>
 
@@ -383,28 +391,30 @@
           {:else}
             <!-- View mode -->
             <div class="card-body flex-row gap-3 items-center">
-              {#if book.cover_url}
-                <img src={book.cover_url} alt={book.title} class="w-16 h-24 object-cover rounded" loading="lazy" />
-              {:else}
-                <div class="w-16 h-24 bg-base-300 rounded flex items-center justify-center text-xs opacity-50">No cover</div>
-              {/if}
-              <div class="flex-1">
-                <h3 class="card-title text-base">{book.title}</h3>
-                <p class="text-sm opacity-70">
-                  {book.authors.map(a => `${a.first_name} ${a.last_name}`).join(', ') || 'Unknown author'}
-                </p>
-                <div class="flex flex-wrap gap-1 mt-1">
-                  {#each book.tags as tag}
-                    <span class="badge badge-sm badge-ghost">{tag.name}</span>
-                  {/each}
+              <div class="flex-1 flex gap-3 cursor-pointer" onclick={() => detailBook = book}>
+                {#if book.cover_url}
+                  <img src={book.cover_url} alt={book.title} class="w-16 h-24 object-cover rounded" loading="lazy" />
+                {:else}
+                  <div class="w-16 h-24 bg-base-300 rounded flex items-center justify-center text-xs opacity-50">No cover</div>
+                {/if}
+                <div class="flex-1">
+                  <h3 class="card-title text-base">{book.title}</h3>
+                  <p class="text-sm opacity-70">
+                    {book.authors.map(a => `${a.first_name} ${a.last_name}`).join(', ') || 'Unknown author'}
+                  </p>
+                  <div class="flex flex-wrap gap-1 mt-1">
+                    {#each book.tags as tag}
+                      <span class="badge badge-sm badge-ghost">{tag.name}</span>
+                    {/each}
+                  </div>
+                  <p class="text-xs opacity-50 mt-1">{utcToLocalDate(book.scan_date)}</p>
                 </div>
-                <p class="text-xs opacity-50 mt-1">{utcToLocalDate(book.scan_date)}</p>
               </div>
               <div class="flex gap-1">
                 <button class="btn btn-ghost btn-sm" onclick={() => startEdit(book)}>
                   <Edit size={16} />
                 </button>
-                <button class="btn btn-ghost btn-sm" onclick={() => handleDelete(book.id)}>
+                <button class="btn btn-ghost btn-sm" onclick={() => deleteConfirmBook = book}>
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -423,3 +433,58 @@
     {/if}
   {/if}
 </section>
+
+<!-- Book Detail Modal -->
+{#if detailBook}
+  <div class="modal modal-open">
+    <div class="modal-box max-w-2xl">
+      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick={() => detailBook = null}>✕</button>
+      
+      <div class="flex gap-4">
+        {#if detailBook.cover_url}
+          <img src={detailBook.cover_url} alt={detailBook.title} class="w-48 h-72 object-cover rounded shadow-lg" />
+        {:else}
+          <div class="w-48 h-72 bg-base-300 rounded flex items-center justify-center text-sm opacity-50">No cover</div>
+        {/if}
+        
+        <div class="flex-1">
+          <h2 class="text-2xl font-bold mb-2">{detailBook.title}</h2>
+          <p class="text-lg mb-3">
+            {detailBook.authors.map(a => `${a.first_name} ${a.last_name}`).join(', ') || 'Unknown author'}
+          </p>
+          
+          <div class="mb-3">
+            <span class="text-sm font-semibold opacity-60">Tags</span>
+            <div class="flex flex-wrap gap-1 mt-1">
+              {#each detailBook.tags as tag}
+                <span class="badge badge-lg">{tag.name}</span>
+              {/each}
+            </div>
+          </div>
+          
+          {#if detailBook.isbn}
+            <p class="text-sm mb-1"><span class="font-semibold">ISBN:</span> {detailBook.isbn}</p>
+          {/if}
+          
+          <p class="text-sm opacity-60">Scanned: {utcToLocalDateTime(detailBook.scan_date)}</p>
+        </div>
+      </div>
+    </div>
+    <div class="modal-backdrop" onclick={() => detailBook = null}></div>
+  </div>
+{/if}
+
+<!-- Delete Confirmation Modal -->
+{#if deleteConfirmBook}
+  <div class="modal modal-open">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Delete Book?</h3>
+      <p class="py-4">Are you sure you want to delete <strong>{deleteConfirmBook.title}</strong>? This cannot be undone.</p>
+      <div class="modal-action">
+        <button class="btn btn-ghost" onclick={() => deleteConfirmBook = null}>Cancel</button>
+        <button class="btn btn-error" onclick={() => handleDelete(deleteConfirmBook!.id)}>Delete</button>
+      </div>
+    </div>
+    <div class="modal-backdrop" onclick={() => deleteConfirmBook = null}></div>
+  </div>
+{/if}

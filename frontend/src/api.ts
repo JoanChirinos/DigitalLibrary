@@ -1,5 +1,24 @@
 const BASE = 'http://localhost:8008';
 
+function getAuthToken(): string | null {
+  const cookie = document.cookie.split('; ').find(c => c.startsWith('auth_token='));
+  return cookie ? cookie.split('=')[1] : null;
+}
+
+function authHeaders(): HeadersInit {
+  const token = getAuthToken();
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+async function handleResponse<T>(res: Response): Promise<T> {
+  if (res.status === 401) {
+    document.cookie = 'auth_token=; max-age=0; path=/';
+    window.location.reload();
+    throw new Error('Unauthorized');
+  }
+  return res.json();
+}
+
 // --- Types ---
 
 export interface Tag {
@@ -36,56 +55,56 @@ export interface CreateBookRequest {
 // --- Books ---
 
 export async function fetchBooks(): Promise<Book[]> {
-  const res = await fetch(`${BASE}/books`);
-  return res.json();
+  const res = await fetch(`${BASE}/books`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 export async function fetchBook(id: number): Promise<Book> {
-  const res = await fetch(`${BASE}/books/${id}`);
-  return res.json();
+  const res = await fetch(`${BASE}/books/${id}`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 export async function createBook(book: CreateBookRequest): Promise<Book> {
   const res = await fetch(`${BASE}/books`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(book),
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function updateBook(id: number, book: CreateBookRequest): Promise<Book> {
   const res = await fetch(`${BASE}/books/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(book),
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function deleteBook(id: number): Promise<void> {
-  await fetch(`${BASE}/books/${id}`, { method: 'DELETE' });
+  await fetch(`${BASE}/books/${id}`, { method: 'DELETE', headers: authHeaders() });
 }
 
 // --- Tags ---
 
 export async function fetchTags(kind?: string): Promise<Tag[]> {
   const url = kind ? `${BASE}/tags?kind=${kind}` : `${BASE}/tags`;
-  const res = await fetch(url);
-  return res.json();
+  const res = await fetch(url, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 export async function createTag(name: string, kind: string): Promise<Tag> {
   const res = await fetch(`${BASE}/tags`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ name, kind }),
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function deleteTag(id: number): Promise<void> {
-  await fetch(`${BASE}/tags/${id}`, { method: 'DELETE' });
+  await fetch(`${BASE}/tags/${id}`, { method: 'DELETE', headers: authHeaders() });
 }
 
 // --- Open Library ---
@@ -169,8 +188,8 @@ function statsParams(tags?: number[], start?: string, end?: string): string {
 }
 
 export async function fetchTotals(tags?: number[], start?: string, end?: string): Promise<Totals> {
-  const res = await fetch(`${BASE}/stats/totals${statsParams(tags, start, end)}`);
-  return res.json();
+  const res = await fetch(`${BASE}/stats/totals${statsParams(tags, start, end)}`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 export async function fetchByTag(kind?: string, tags?: number[], start?: string, end?: string): Promise<TagCount[]> {
@@ -180,13 +199,13 @@ export async function fetchByTag(kind?: string, tags?: number[], start?: string,
   if (start) params.set('start', start);
   if (end) params.set('end', end);
   const str = params.toString();
-  const res = await fetch(`${BASE}/stats/by-tag${str ? `?${str}` : ''}`);
-  return res.json();
+  const res = await fetch(`${BASE}/stats/by-tag${str ? `?${str}` : ''}`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 export async function fetchByAuthor(tags?: number[], start?: string, end?: string): Promise<AuthorCount[]> {
-  const res = await fetch(`${BASE}/stats/by-author${statsParams(tags, start, end)}`);
-  return res.json();
+  const res = await fetch(`${BASE}/stats/by-author${statsParams(tags, start, end)}`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 export async function fetchGrowth(groupBy?: string, tags?: number[], start?: string, end?: string): Promise<GrowthBucket[]> {
@@ -196,6 +215,6 @@ export async function fetchGrowth(groupBy?: string, tags?: number[], start?: str
   if (start) params.set('start', start);
   if (end) params.set('end', end);
   const str = params.toString();
-  const res = await fetch(`${BASE}/stats/growth${str ? `?${str}` : ''}`);
-  return res.json();
+  const res = await fetch(`${BASE}/stats/growth${str ? `?${str}` : ''}`, { headers: authHeaders() });
+  return handleResponse(res);
 }

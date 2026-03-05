@@ -4,21 +4,24 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use axum_extra::{
+    headers::{authorization::Bearer, Authorization},
+    TypedHeader,
+};
 use diesel::prelude::*;
 use diesel::dsl::count;
 use serde::{Deserialize, Serialize};
+use crate::auth::{extract_library_id, TokenStore};
 use crate::db::DbPool;
 use crate::schema::{books, authors, tags, book_authors, book_tags};
 
-pub fn router() -> Router<DbPool> {
+pub fn router() -> Router<(DbPool, TokenStore)> {
     Router::new()
         .route("/totals", get(totals))
         .route("/by-tag", get(by_tag))
         .route("/by-author", get(by_author))
         .route("/growth", get(growth))
 }
-
-// --- Shared ---
 
 #[derive(Deserialize)]
 pub struct StatsFilter {
@@ -35,11 +38,12 @@ fn parse_tag_ids(tags: &Option<String>) -> Vec<i32> {
 
 fn filtered_book_ids(
     conn: &mut SqliteConnection,
+    library_id: i32,
     tag_ids: &[i32],
     start: &Option<String>,
     end: &Option<String>,
 ) -> Result<Vec<i32>, diesel::result::Error> {
-    let mut query = books::table.into_boxed().select(books::id);
+    let mut query = books::table.filter(books::library_id.eq(library_id)).into_boxed().select(books::id);
 
     if !tag_ids.is_empty() {
         let matching: Vec<i32> = book_tags::table
@@ -60,8 +64,6 @@ fn filtered_book_ids(
     query.load(conn)
 }
 
-// --- /stats/totals ---
-
 #[derive(Serialize)]
 struct Totals {
     books: i64,
@@ -70,24 +72,24 @@ struct Totals {
 }
 
 async fn totals(
-    State(pool): State<DbPool>,
+    State((pool, token_store)): State<(DbPool, TokenStore)>,
+    auth: TypedHeader<Authorization<Bearer>>,
     Query(filter): Query<StatsFilter>,
 ) -> Result<Json<Totals>, StatusCode> {
+    let library_id = extract_library_id(&token_store, auth)?;
     let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tag_ids = parse_tag_ids(&filter.tags);
-    let ids = filtered_book_ids(&mut conn, &tag_ids, &filter.start, &filter.end)
+    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.start, &filter.end)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let book_count = ids.len() as i64;
-    let author_count: i64 = authors::table.count().get_result(&mut conn)
+    let author_count: i64 = authors::table.filter(authors::library_id.eq(library_id)).count().get_result(&mut conn)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let tag_count: i64 = tags::table.count().get_result(&mut conn)
+    let tag_count: i64 = tags::table.filter(tags::library_id.eq(library_id)).count().get_result(&mut conn)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(Totals { books: book_count, authors: author_count, tags: tag_count }))
 }
-
-// --- /stats/by-tag ---
 
 #[derive(Deserialize)]
 pub struct ByTagFilter {
@@ -104,17 +106,20 @@ struct TagCount {
 }
 
 async fn by_tag(
-    State(pool): State<DbPool>,
+    State((pool, token_store)): State<(DbPool, TokenStore)>,
+    auth: TypedHeader<Authorization<Bearer>>,
     Query(filter): Query<ByTagFilter>,
 ) -> Result<Json<Vec<TagCount>>, StatusCode> {
+    let library_id = extract_library_id(&token_store, auth)?;
     let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tag_ids = parse_tag_ids(&filter.base.tags);
-    let ids = filtered_book_ids(&mut conn, &tag_ids, &filter.base.start, &filter.base.end)
+    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.base.start, &filter.base.end)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut query = book_tags::table
         .inner_join(tags::table)
         .filter(book_tags::book_id.eq_any(&ids))
+        .filter(tags::library_id.eq(library_id))
         .group_by((tags::name, tags::kind))
         .select((tags::name, tags::kind, count(book_tags::book_id)))
         .order(count(book_tags::book_id).desc())
@@ -129,8 +134,6 @@ async fn by_tag(
     Ok(Json(results))
 }
 
-// --- /stats/by-author ---
-
 #[derive(Serialize)]
 struct AuthorCount {
     first_name: String,
@@ -139,15 +142,18 @@ struct AuthorCount {
 }
 
 async fn by_author(
-    State(pool): State<DbPool>,
+    State((pool, token_store)): State<(DbPool, TokenStore)>,
+    auth: TypedHeader<Authorization<Bearer>>,
     Query(filter): Query<StatsFilter>,
 ) -> Result<Json<Vec<AuthorCount>>, StatusCode> {
+    let library_id = extract_library_id(&token_store, auth)?;
     let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tag_ids = parse_tag_ids(&filter.tags);
-    let ids = filtered_book_ids(&mut conn, &tag_ids, &filter.start, &filter.end)
+    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.start, &filter.end)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let all_authors: Vec<(i32, String, String)> = authors::table
+        .filter(authors::library_id.eq(library_id))
         .select((authors::id, authors::first_name, authors::last_name))
         .load(&mut conn)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -168,8 +174,6 @@ async fn by_author(
     Ok(Json(results))
 }
 
-// --- /stats/growth ---
-
 #[derive(Deserialize)]
 pub struct GrowthFilter {
     group_by: Option<String>,
@@ -184,12 +188,14 @@ struct GrowthBucket {
 }
 
 async fn growth(
-    State(pool): State<DbPool>,
+    State((pool, token_store)): State<(DbPool, TokenStore)>,
+    auth: TypedHeader<Authorization<Bearer>>,
     Query(filter): Query<GrowthFilter>,
 ) -> Result<Json<Vec<GrowthBucket>>, StatusCode> {
+    let library_id = extract_library_id(&token_store, auth)?;
     let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tag_ids = parse_tag_ids(&filter.base.tags);
-    let ids = filtered_book_ids(&mut conn, &tag_ids, &filter.base.start, &filter.base.end)
+    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.base.start, &filter.base.end)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let dates: Vec<String> = books::table

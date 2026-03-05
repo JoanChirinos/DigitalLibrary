@@ -6,6 +6,7 @@
 
   let newName = $state('');
   let newKind = $state('genre');
+  let deleteConfirmTag = $state<Tag | null>(null);
 
   const kindOrder = ['owner', 'genre', 'custom'];
 
@@ -34,6 +35,7 @@
   async function handleDelete(id: number) {
     await deleteTag(id);
     await loadTags();
+    deleteConfirmTag = null;
   }
 </script>
 
@@ -56,7 +58,7 @@
         {#each kindTags.sort((a, b) => a.name.localeCompare(b.name)) as tag}
           <div class="badge badge-lg gap-1">
             {tag.name}
-            <button class="cursor-pointer opacity-50 hover:opacity-100" onclick={() => handleDelete(tag.id)}>
+            <button class="cursor-pointer opacity-50 hover:opacity-100" onclick={() => deleteConfirmTag = tag}>
               <Trash2 size={12} />
             </button>
           </div>
@@ -65,3 +67,18 @@
     </div>
   {/each}
 </section>
+
+<!-- Delete Confirmation Modal -->
+{#if deleteConfirmTag}
+  <div class="modal modal-open">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Delete Tag?</h3>
+      <p class="py-4">Are you sure you want to delete the <strong>{deleteConfirmTag.name}</strong> tag? It will be removed from all books.</p>
+      <div class="modal-action">
+        <button class="btn btn-ghost" onclick={() => deleteConfirmTag = null}>Cancel</button>
+        <button class="btn btn-error" onclick={() => handleDelete(deleteConfirmTag!.id)}>Delete</button>
+      </div>
+    </div>
+    <div class="modal-backdrop" onclick={() => deleteConfirmTag = null}></div>
+  </div>
+{/if}
