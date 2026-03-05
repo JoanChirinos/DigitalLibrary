@@ -20,6 +20,7 @@
   "dependencies": {
     "chart.js": "^4.5.1",
     "fuse.js": "^7.1.0",
+    "html5-qrcode": "^2.3.8",
     "lucide-svelte": "^0.577.0"
   }
 }

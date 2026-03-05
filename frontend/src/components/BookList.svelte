@@ -2,11 +2,18 @@
   import { books, tags } from '../stores';
   import { deleteBook } from '../api';
   import { loadBooks } from '../stores';
-  import { Trash2 } from 'lucide-svelte';
+  import { Trash2, X } from 'lucide-svelte';
   import type { Book, Tag } from '../api';
+  import Fuse from 'fuse.js';
+
+  function utcToLocalDate(utc: string): string {
+    const date = new Date(utc.endsWith('Z') ? utc : utc + 'Z');
+    return date.toLocaleDateString();
+  }
 
   let sortBy = $state<'title' | 'author' | 'recent'>('author');
   let selectedTags = $state<number[]>([]);
+  let searchQuery = $state('');
 
   // Group tags by kind for the filter UI
   let tagsByKind = $derived(
@@ -16,8 +23,19 @@
     }, {})
   );
 
+  // Fuse.js for fuzzy search
+  let fuse = $derived(new Fuse($books, {
+    keys: ['title', 'authors.first_name', 'authors.last_name'],
+    threshold: 0.4,
+  }));
+
   let filteredBooks = $derived.by(() => {
     let result = [...$books];
+
+    // Search
+    if (searchQuery.trim()) {
+      result = fuse.search(searchQuery).map(r => r.item);
+    }
 
     // Filter by selected tags (must have ALL selected)
     if (selectedTags.length > 0) {
@@ -70,6 +88,26 @@
 </script>
 
 <section>
+  <!-- Search -->
+  <div class="mb-4">
+    <div class="relative">
+      <input
+        class="input input-bordered w-full"
+        placeholder="Search books by title or author..."
+        bind:value={searchQuery}
+        onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+      />
+      {#if searchQuery}
+        <button
+          class="btn btn-ghost btn-sm absolute right-1 top-1"
+          onclick={() => searchQuery = ''}
+        >
+          <X size={16} />
+        </button>
+      {/if}
+    </div>
+  </div>
+
   <!-- Sort + Filter controls -->
   <div class="flex flex-wrap gap-4 mb-4 items-start">
     <div>
@@ -167,8 +205,13 @@
     <div class="flex flex-col gap-3">
       {#each pagedBooks as book}
         <div class="card card-compact bg-base-100 shadow">
-          <div class="card-body flex-row justify-between items-center">
-            <div>
+          <div class="card-body flex-row gap-3 items-center">
+            {#if book.cover_url}
+              <img src={book.cover_url} alt={book.title} class="w-16 h-24 object-cover rounded" loading="lazy" />
+            {:else}
+              <div class="w-16 h-24 bg-base-300 rounded flex items-center justify-center text-xs opacity-50">No cover</div>
+            {/if}
+            <div class="flex-1">
               <h3 class="card-title text-base">{book.title}</h3>
               <p class="text-sm opacity-70">
                 {book.authors.map(a => `${a.first_name} ${a.last_name}`).join(', ') || 'Unknown author'}
@@ -178,7 +221,7 @@
                   <span class="badge badge-sm badge-ghost">{tag.name}</span>
                 {/each}
               </div>
-              <p class="text-xs opacity-50 mt-1">{book.scan_date}</p>
+              <p class="text-xs opacity-50 mt-1">{utcToLocalDate(book.scan_date)}</p>
             </div>
             <button class="btn btn-ghost btn-sm" onclick={() => handleDelete(book.id)}>
               <Trash2 size={16} />

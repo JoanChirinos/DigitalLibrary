@@ -1,12 +1,30 @@
 <script lang="ts">
   import { books, tags, loadBooks, loadTags } from '../stores';
-  import { createBook, createTag } from '../api';
+  import { createBook, createTag, lookupISBN } from '../api';
   import type { Tag } from '../api';
-  import { Plus, X } from 'lucide-svelte';
+  import { Plus, X, Search, Camera } from 'lucide-svelte';
   import Fuse from 'fuse.js';
+  import { onMount, tick } from 'svelte';
+  import { Html5Qrcode } from 'html5-qrcode';
+
+  function nowLocal() {
+    const now = new Date();
+    const offset = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - offset).toISOString().slice(0, 19);
+  }
+
+  function localToUTC(localDatetime: string): string {
+    return new Date(localDatetime).toISOString().slice(0, 19) + 'Z';
+  }
+
+  function utcToLocal(utcDatetime: string): string {
+    const date = new Date(utcDatetime.endsWith('Z') ? utcDatetime : utcDatetime + 'Z');
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 19);
+  }
 
   let title = $state('');
-  let scanDate = $state(new Date().toISOString().slice(0, 10));
+  let scanDate = $state(nowLocal());
   let isbn = $state('');
   let coverUrl = $state('');
   let firstName = $state('');
@@ -18,6 +36,28 @@
   let newTagName = $state('');
   let newTagKind = $state('genre');
   let showNewTag = $state(false);
+
+  // ISBN lookup state
+  let isbnInput = $state('');
+  let isLookingUp = $state(false);
+  let lookupError = $state('');
+  let suggestedSubjects = $state<string[]>([]);
+  let lastLookupTime = $state<number | null>(null);
+
+  // Barcode scanner state
+  let isScanning = $state(false);
+  let scanError = $state('');
+  let scanner: Html5Qrcode | null = null;
+
+  onMount(() => {
+    const cookie = document.cookie.split('; ').find(c => c.startsWith('lastISBNLookup='));
+    if (cookie) {
+      lastLookupTime = parseInt(cookie.split('=')[1]);
+    }
+  });
+
+  let canLookup = $derived(lastLookupTime === null || Date.now() - lastLookupTime >= 5000);
+  let timeRemaining = $derived(lastLookupTime ? Math.max(0, 5 - Math.floor((Date.now() - lastLookupTime) / 1000)) : 0);
 
   let allAuthors = $derived(
     Object.values(
@@ -48,6 +88,124 @@
       return acc;
     }, {})
   );
+
+  async function startScanner() {
+    scanError = '';
+    isScanning = true;
+    await tick(); // Wait for DOM to update
+    scanner = new Html5Qrcode('barcode-reader');
+    
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          if (/^\d{13}$/.test(decodedText) && (decodedText.startsWith('978') || decodedText.startsWith('979'))) {
+            isbnInput = decodedText;
+            stopScanner();
+            if (canLookup) handleISBNLookup();
+          }
+        },
+        undefined
+      );
+    } catch (e: any) {
+      scanError = e.message?.includes('NotAllowedError') ? 'Camera permission denied' : 'Failed to start camera';
+      isScanning = false;
+    }
+  }
+
+  async function stopScanner() {
+    isScanning = false;
+    if (scanner) {
+      try {
+        const state = await scanner.getState();
+        if (state === 2) { // 2 = scanning
+          await scanner.stop();
+        }
+        scanner.clear();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      scanner = null;
+    }
+  }
+
+  async function handleISBNLookup() {
+    lookupError = '';
+    suggestedSubjects = [];
+    isLookingUp = true;
+
+    try {
+      const result = await lookupISBN(isbnInput);
+      
+      // Auto-fill fields
+      title = result.title;
+      scanDate = nowLocal();
+      isbn = isbnInput;
+      coverUrl = result.coverUrl || '';
+
+      // Parse and match authors
+      const authorFuse = new Fuse(allAuthors, { keys: ['first_name', 'last_name'], threshold: 0.5, includeScore: true });
+      for (let i = 0; i < result.authors.length; i++) {
+        const name = result.authors[i].trim();
+        const parts = name.split(/\s+/);
+        const lastNameParsed = parts.pop() || '';
+        const firstNameParsed = parts.join(' ') || '';
+        
+        // Try fuzzy match
+        const matches = authorFuse.search(`${firstNameParsed} ${lastNameParsed}`);
+        
+        if (matches.length > 0 && matches[0].score! <= 0.5) {
+          // Good match found, add it
+          const match = matches[0].item;
+          if (!authors.some(a => a.first_name === match.first_name && a.last_name === match.last_name)) {
+            authors = [...authors, match];
+          }
+        } else if (parts.length === 0) {
+          // Simple two-word name, auto-add
+          if (!authors.some(a => a.first_name === firstNameParsed && a.last_name === lastNameParsed)) {
+            authors = [...authors, { first_name: firstNameParsed, last_name: lastNameParsed }];
+          }
+        } else {
+          // Complex name (3+ words), pre-fill fields for first author only
+          if (i === 0 && authors.length === 0) {
+            firstName = firstNameParsed;
+            lastName = lastNameParsed;
+          }
+        }
+      }
+
+      // Auto-select matching genre tags
+      const genreTags = ($tags).filter(t => t.kind === 'genre');
+      for (const subject of result.subjects) {
+        const match = genreTags.find(t => t.name.toLowerCase() === subject.toLowerCase());
+        if (match && !selectedTagIds.includes(match.id)) {
+          selectedTagIds = [...selectedTagIds, match.id];
+        }
+      }
+
+      // Store non-matching subjects as suggestions (lowercase)
+      const matched = result.subjects.filter(s => 
+        genreTags.some(t => t.name.toLowerCase() === s.toLowerCase())
+      );
+      suggestedSubjects = result.subjects.filter(s => !matched.includes(s)).map(s => s.toLowerCase());
+
+      // Set cookie
+      document.cookie = `lastISBNLookup=${Date.now()}; max-age=300`;
+      lastLookupTime = Date.now();
+    } catch (e: any) {
+      lookupError = e.message || 'Lookup failed';
+    } finally {
+      isLookingUp = false;
+    }
+  }
+
+  async function addSuggestedGenre(subject: string) {
+    const tag = await createTag(subject, 'genre');
+    await loadTags();
+    selectedTagIds = [...selectedTagIds, tag.id];
+    suggestedSubjects = suggestedSubjects.filter(s => s !== subject);
+  }
 
   function addAuthor() {
     const fn = firstName.trim();
@@ -84,7 +242,8 @@
   async function handleNewTag() {
     const name = newTagName.trim();
     if (!name) return;
-    const tag = await createTag(name, newTagKind);
+    const finalName = newTagKind === 'genre' ? name.toLowerCase() : name;
+    const tag = await createTag(finalName, newTagKind);
     await loadTags();
     selectedTagIds = [...selectedTagIds, tag.id];
     newTagName = '';
@@ -95,7 +254,7 @@
     if (!title.trim()) return;
     await createBook({
       title: title.trim(),
-      scan_date: scanDate,
+      scan_date: localToUTC(scanDate),
       isbn: isbn || undefined,
       cover_url: coverUrl || undefined,
       authors,
@@ -103,13 +262,16 @@
     });
     await loadBooks();
     title = '';
-    scanDate = new Date().toISOString().slice(0, 10);
+    scanDate = nowLocal();
     isbn = '';
     coverUrl = '';
     authors = [];
     firstName = '';
     lastName = '';
     selectedTagIds = [];
+    isbnInput = '';
+    lookupError = '';
+    suggestedSubjects = [];
   }
 </script>
 
@@ -118,9 +280,65 @@
   <div class="collapse-title text-lg font-semibold">Add Book</div>
   <div class="collapse-content">
 
+    <!-- ISBN Lookup -->
+    <div class="mb-4 p-3 bg-base-200 rounded-lg">
+      <div class="flex gap-2 items-end">
+        <div class="flex-1">
+          <label class="text-sm font-semibold">ISBN Lookup</label>
+          <input
+            class="input input-bordered input-sm w-full mt-1"
+            placeholder="Enter ISBN"
+            bind:value={isbnInput}
+            onkeydown={(e) => { if (e.key === 'Enter' && canLookup && isbnInput.trim()) handleISBNLookup(); }}
+          />
+        </div>
+        <button
+          class="btn btn-sm btn-outline"
+          onclick={startScanner}
+        >
+          <Camera size={16} /> Scan
+        </button>
+        <button
+          class="btn btn-sm btn-primary"
+          disabled={!canLookup || !isbnInput.trim() || isLookingUp}
+          onclick={handleISBNLookup}
+        >
+          {#if isLookingUp}
+            <span class="loading loading-spinner loading-xs"></span>
+          {:else if !canLookup}
+            Wait {timeRemaining}s
+          {:else}
+            <Search size={16} /> Lookup
+          {/if}
+        </button>
+      </div>
+      {#if lookupError}
+        <div class="alert alert-sm mt-2" class:alert-error={lookupError === 'ISBN not found'} class:alert-warning={lookupError === 'Rate limited'} class:alert-info={lookupError !== 'ISBN not found' && lookupError !== 'Rate limited'}>
+          {lookupError}
+        </div>
+      {/if}
+      {#if suggestedSubjects.length > 0}
+        <div class="mt-2">
+          <span class="text-xs opacity-60">Suggested genres from Open Library:</span>
+          <div class="flex flex-wrap gap-1 mt-1">
+            {#each suggestedSubjects as subject}
+              <button class="badge badge-outline badge-sm cursor-pointer" onclick={() => addSuggestedGenre(subject)}>
+                + {subject}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       <input class="input input-bordered w-full" placeholder="Title" bind:value={title} />
-      <input class="input input-bordered w-full" type="date" bind:value={scanDate} />
+      <input
+        class="input input-bordered w-full"
+        type="datetime-local"
+        bind:value={scanDate}
+        onfocus={() => scanDate = nowLocal()}
+      />
       <input class="input input-bordered w-full" placeholder="ISBN (optional)" bind:value={isbn} />
       <input class="input input-bordered w-full" placeholder="Cover URL (optional)" bind:value={coverUrl} />
     </div>
@@ -208,3 +426,20 @@
     </div>
   </div>
 </div>
+
+<!-- Barcode Scanner Modal -->
+{#if isScanning}
+  <div class="modal modal-open">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg mb-2">Scan Barcode</h3>
+      <p class="text-sm opacity-70 mb-3">Point camera at ISBN barcode</p>
+      <div id="barcode-reader" class="w-full"></div>
+      {#if scanError}
+        <div class="alert alert-error alert-sm mt-2">{scanError}</div>
+      {/if}
+      <div class="modal-action">
+        <button class="btn btn-sm" onclick={stopScanner}>Cancel</button>
+      </div>
+    </div>
+  </div>
+{/if}

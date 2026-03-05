@@ -88,6 +88,52 @@ export async function deleteTag(id: number): Promise<void> {
   await fetch(`${BASE}/tags/${id}`, { method: 'DELETE' });
 }
 
+// --- Open Library ---
+
+export interface ISBNLookupResult {
+  title: string;
+  authors: string[];
+  subjects: string[];
+  coverUrl: string | null;
+}
+
+export async function lookupISBN(isbn: string): Promise<ISBNLookupResult> {
+  const cleanISBN = isbn.replace(/[^0-9X]/gi, '');
+  const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanISBN}&jscmd=data&format=json`;
+  
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    throw new Error('Connection failed');
+  }
+
+  if (res.status === 429) {
+    throw new Error('Rate limited');
+  }
+  if (res.status >= 500) {
+    throw new Error('Service unavailable');
+  }
+  if (!res.ok) {
+    throw new Error('Request failed');
+  }
+
+  const data = await res.json();
+  const key = `ISBN:${cleanISBN}`;
+  const book = data[key];
+
+  if (!book) {
+    throw new Error('ISBN not found');
+  }
+
+  return {
+    title: book.title || '',
+    authors: (book.authors || []).map((a: any) => a.name || '').filter(Boolean),
+    subjects: (book.subjects || []).map((s: any) => s.name || '').filter(Boolean),
+    coverUrl: book.cover?.medium || null,
+  };
+}
+
 // --- Stats ---
 
 export interface Totals {
