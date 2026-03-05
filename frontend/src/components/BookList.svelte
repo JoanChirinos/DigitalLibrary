@@ -2,9 +2,11 @@
   import { books, tags } from '../stores';
   import { deleteBook } from '../api';
   import { loadBooks } from '../stores';
-  import { Trash2, X } from 'lucide-svelte';
+  import { Trash2, X, Edit, Save } from 'lucide-svelte';
   import type { Book, Tag } from '../api';
   import Fuse from 'fuse.js';
+  import { updateBook, createTag } from '../api';
+  import { loadTags } from '../stores';
 
   function utcToLocalDate(utc: string): string {
     const date = new Date(utc.endsWith('Z') ? utc : utc + 'Z');
@@ -14,6 +16,38 @@
   let sortBy = $state<'title' | 'author' | 'recent'>('author');
   let selectedTags = $state<number[]>([]);
   let searchQuery = $state('');
+
+  // Edit state
+  let editingId = $state<number | null>(null);
+  let editTitle = $state('');
+  let editIsbn = $state('');
+  let editCoverUrl = $state('');
+  let editAuthors = $state<{first_name: string; last_name: string}[]>([]);
+  let editTagIds = $state<number[]>([]);
+  let editFirstName = $state('');
+  let editLastName = $state('');
+  let showEditSuggestions = $state(false);
+
+  // Author autocomplete for edit
+  let allAuthors = $derived(
+    Object.values(
+      $books.flatMap(b => b.authors).reduce((acc: Record<string, {first_name: string; last_name: string}>, a) => {
+        acc[`${a.first_name}|${a.last_name}`] = { first_name: a.first_name, last_name: a.last_name };
+        return acc;
+      }, {})
+    ).sort((a, b) => a.last_name.localeCompare(b.last_name))
+  );
+
+  let authorFuse = $derived(new Fuse(allAuthors, { keys: ['first_name', 'last_name'], threshold: 0.4 }));
+
+  let editAuthorSuggestions = $derived.by(() => {
+    const q = `${editFirstName} ${editLastName}`.trim();
+    if (!q) return [];
+    return authorFuse.search(q)
+      .map(r => r.item)
+      .filter(a => !editAuthors.some(x => x.first_name === a.first_name && x.last_name === a.last_name))
+      .slice(0, 8);
+  });
 
   // Group tags by kind for the filter UI
   let tagsByKind = $derived(
@@ -72,6 +106,69 @@
     perPage;
     page = 1;
   });
+
+  function startEdit(book: Book) {
+    editingId = book.id;
+    editTitle = book.title;
+    editIsbn = book.isbn || '';
+    editCoverUrl = book.cover_url || '';
+    editAuthors = book.authors.map(a => ({ first_name: a.first_name, last_name: a.last_name }));
+    editTagIds = book.tags.map(t => t.id);
+    editFirstName = '';
+    editLastName = '';
+  }
+
+  function cancelEdit() {
+    editingId = null;
+  }
+
+  function addEditAuthor() {
+    const fn = editFirstName.trim();
+    const ln = editLastName.trim();
+    if (fn && ln && !editAuthors.some(a => a.first_name === fn && a.last_name === ln)) {
+      editAuthors = [...editAuthors, { first_name: fn, last_name: ln }];
+    }
+    editFirstName = '';
+    editLastName = '';
+    showEditSuggestions = false;
+  }
+
+  function selectEditAuthor(a: {first_name: string; last_name: string}) {
+    if (!editAuthors.some(x => x.first_name === a.first_name && x.last_name === a.last_name)) {
+      editAuthors = [...editAuthors, a];
+    }
+    editFirstName = '';
+    editLastName = '';
+    showEditSuggestions = false;
+  }
+
+  function removeEditAuthor(a: {first_name: string; last_name: string}) {
+    editAuthors = editAuthors.filter(x => x.first_name !== a.first_name || x.last_name !== a.last_name);
+  }
+
+  function toggleEditTag(id: number) {
+    if (editTagIds.includes(id)) {
+      editTagIds = editTagIds.filter(t => t !== id);
+    } else {
+      editTagIds = [...editTagIds, id];
+    }
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editTitle.trim()) return;
+    const book = $books.find(b => b.id === editingId);
+    if (!book) return;
+    await updateBook(editingId, {
+      title: editTitle.trim(),
+      scan_date: book.scan_date,
+      isbn: editIsbn || undefined,
+      cover_url: editCoverUrl || undefined,
+      authors: editAuthors,
+      tag_ids: editTagIds,
+    });
+    await loadBooks();
+    editingId = null;
+  }
 
   function toggleTag(id: number) {
     if (selectedTags.includes(id)) {
@@ -205,28 +302,114 @@
     <div class="flex flex-col gap-3">
       {#each pagedBooks as book}
         <div class="card card-compact bg-base-100 shadow">
-          <div class="card-body flex-row gap-3 items-center">
-            {#if book.cover_url}
-              <img src={book.cover_url} alt={book.title} class="w-16 h-24 object-cover rounded" loading="lazy" />
-            {:else}
-              <div class="w-16 h-24 bg-base-300 rounded flex items-center justify-center text-xs opacity-50">No cover</div>
-            {/if}
-            <div class="flex-1">
-              <h3 class="card-title text-base">{book.title}</h3>
-              <p class="text-sm opacity-70">
-                {book.authors.map(a => `${a.first_name} ${a.last_name}`).join(', ') || 'Unknown author'}
-              </p>
-              <div class="flex flex-wrap gap-1 mt-1">
-                {#each book.tags as tag}
-                  <span class="badge badge-sm badge-ghost">{tag.name}</span>
-                {/each}
+          {#if editingId === book.id}
+            <!-- Edit mode -->
+            <div class="card-body">
+              <input class="input input-bordered input-sm w-full mb-2" placeholder="Title" bind:value={editTitle} />
+              <input class="input input-bordered input-sm w-full mb-2" placeholder="ISBN" bind:value={editIsbn} />
+              <input class="input input-bordered input-sm w-full mb-2" placeholder="Cover URL" bind:value={editCoverUrl} />
+              
+              <!-- Authors -->
+              <div class="mb-2">
+                <span class="text-sm font-semibold">Authors</span>
+                <div class="relative flex gap-2 mt-1">
+                  <input
+                    class="input input-bordered input-sm flex-1"
+                    placeholder="First name"
+                    bind:value={editFirstName}
+                    onfocus={() => showEditSuggestions = true}
+                    onblur={() => setTimeout(() => showEditSuggestions = false, 200)}
+                    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEditAuthor(); } }}
+                  />
+                  <input
+                    class="input input-bordered input-sm flex-1"
+                    placeholder="Last name"
+                    bind:value={editLastName}
+                    onfocus={() => showEditSuggestions = true}
+                    onblur={() => setTimeout(() => showEditSuggestions = false, 200)}
+                    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEditAuthor(); } }}
+                  />
+                  <button class="btn btn-sm btn-outline" onclick={addEditAuthor}>Add</button>
+                </div>
+                {#if showEditSuggestions && editAuthorSuggestions.length > 0}
+                  <ul class="menu bg-base-100 shadow-lg rounded-box z-10 w-full mt-1 max-h-48 overflow-y-auto">
+                    {#each editAuthorSuggestions as suggestion}
+                      <li><button onmousedown={() => selectEditAuthor(suggestion)}>{suggestion.first_name} {suggestion.last_name}</button></li>
+                    {/each}
+                  </ul>
+                {/if}
+                {#if editAuthors.length > 0}
+                  <div class="flex flex-wrap gap-1 mt-2">
+                    {#each editAuthors as author}
+                      <button class="badge badge-primary cursor-pointer" onclick={() => removeEditAuthor(author)}>
+                        {author.first_name} {author.last_name} <X size={12} />
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
               </div>
-              <p class="text-xs opacity-50 mt-1">{utcToLocalDate(book.scan_date)}</p>
+
+              <!-- Tags -->
+              <div class="mb-2">
+                <span class="text-sm font-semibold">Tags</span>
+                <div class="flex flex-wrap gap-2 mt-1">
+                  {#each Object.entries(tagsByKind) as [kind, kindTags]}
+                    <div>
+                      <span class="text-xs uppercase opacity-60">{kind}</span>
+                      <div class="flex flex-wrap gap-1 mt-1">
+                        {#each kindTags.sort((a, b) => a.name.localeCompare(b.name)) as tag}
+                          <button
+                            class="badge badge-outline badge-sm cursor-pointer"
+                            class:badge-primary={editTagIds.includes(tag.id)}
+                            onclick={() => toggleEditTag(tag.id)}
+                          >{tag.name}</button>
+                        {/each}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+
+              <!-- Scan date (read-only) -->
+              <p class="text-xs opacity-50">Scanned: {utcToLocalDate(book.scan_date)}</p>
+
+              <div class="flex gap-2 justify-end mt-2">
+                <button class="btn btn-sm btn-ghost" onclick={cancelEdit}>Cancel</button>
+                <button class="btn btn-sm btn-primary" onclick={saveEdit} disabled={!editTitle.trim()}>
+                  <Save size={16} /> Save
+                </button>
+              </div>
             </div>
-            <button class="btn btn-ghost btn-sm" onclick={() => handleDelete(book.id)}>
-              <Trash2 size={16} />
-            </button>
-          </div>
+          {:else}
+            <!-- View mode -->
+            <div class="card-body flex-row gap-3 items-center">
+              {#if book.cover_url}
+                <img src={book.cover_url} alt={book.title} class="w-16 h-24 object-cover rounded" loading="lazy" />
+              {:else}
+                <div class="w-16 h-24 bg-base-300 rounded flex items-center justify-center text-xs opacity-50">No cover</div>
+              {/if}
+              <div class="flex-1">
+                <h3 class="card-title text-base">{book.title}</h3>
+                <p class="text-sm opacity-70">
+                  {book.authors.map(a => `${a.first_name} ${a.last_name}`).join(', ') || 'Unknown author'}
+                </p>
+                <div class="flex flex-wrap gap-1 mt-1">
+                  {#each book.tags as tag}
+                    <span class="badge badge-sm badge-ghost">{tag.name}</span>
+                  {/each}
+                </div>
+                <p class="text-xs opacity-50 mt-1">{utcToLocalDate(book.scan_date)}</p>
+              </div>
+              <div class="flex gap-1">
+                <button class="btn btn-ghost btn-sm" onclick={() => startEdit(book)}>
+                  <Edit size={16} />
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick={() => handleDelete(book.id)}>
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          {/if}
         </div>
       {/each}
     </div>
