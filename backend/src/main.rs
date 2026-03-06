@@ -5,7 +5,6 @@ mod schema;
 mod routes;
 
 use axum::Router;
-use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use std::path::PathBuf;
