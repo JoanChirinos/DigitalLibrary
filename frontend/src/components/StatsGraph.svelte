@@ -52,47 +52,59 @@
       const t = ($tags).find(t => t.id === id);
       return t && t.name === d.tag_name;
     }));
-    tagChart?.destroy();
-    tagChart = new Chart(tagCanvas, {
-      type: 'bar',
-      data: {
-        labels: data.map(d => d.tag_name),
-        datasets: [{
-          label: 'Books',
-          data: data.map(d => d.count),
-          backgroundColor: 'oklch(0.65 0.15 240)',
-        }],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } },
-      },
-    });
+
+    if (!tagChart) {
+      tagChart = new Chart(tagCanvas, {
+        type: 'bar',
+        data: {
+          labels: data.map(d => d.tag_name),
+          datasets: [{
+            label: 'Books',
+            data: data.map(d => d.count),
+            backgroundColor: 'oklch(0.65 0.15 240)',
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        },
+      });
+    } else {
+      tagChart.data.labels = data.map(d => d.tag_name);
+      tagChart.data.datasets[0].data = data.map(d => d.count);
+      tagChart.update();
+    }
   }
 
   async function loadAuthorChart() {
     const data = await fetchByAuthor(filterTagIds.length ? filterTagIds : undefined, undefined, undefined, $showArchived ? undefined : false);
     const top20 = data.slice(0, 20);
-    authorChart?.destroy();
-    authorChart = new Chart(authorCanvas, {
-      type: 'bar',
-      data: {
-        labels: top20.map(d => `${d.first_name} ${d.last_name}`),
-        datasets: [{
-          label: 'Books',
-          data: top20.map(d => d.count),
-          backgroundColor: 'oklch(0.65 0.15 160)',
-        }],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } },
-      },
-    });
+
+    if (!authorChart) {
+      authorChart = new Chart(authorCanvas, {
+        type: 'bar',
+        data: {
+          labels: top20.map(d => `${d.first_name} ${d.last_name}`),
+          datasets: [{
+            label: 'Books',
+            data: top20.map(d => d.count),
+            backgroundColor: 'oklch(0.65 0.15 160)',
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        },
+      });
+    } else {
+      authorChart.data.labels = top20.map(d => `${d.first_name} ${d.last_name}`);
+      authorChart.data.datasets[0].data = top20.map(d => d.count);
+      authorChart.update();
+    }
   }
 
   async function loadGrowthChart() {
