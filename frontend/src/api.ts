@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:8008';
+const BASE = import.meta.env.DEV ? 'http://localhost:8008' : '/api';
 
 function getAuthToken(): string | null {
   const cookie = document.cookie.split('; ').find(c => c.startsWith('auth_token='));

@@ -18,7 +18,8 @@
   let passkeyInput: HTMLInputElement;
 
   onMount(async () => {
-    const res = await fetch('http://localhost:8008/auth/libraries');
+    const base = import.meta.env.DEV ? 'http://localhost:8008' : '/api';
+    const res = await fetch(`${base}/auth/libraries`);
     libraries = await res.json();
   });
 
@@ -34,7 +35,8 @@
     isLoading = true;
 
     try {
-      const res = await fetch('http://localhost:8008/auth/login', {
+      const base = import.meta.env.DEV ? 'http://localhost:8008' : '/api';
+      const res = await fetch(`${base}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: selectedLibrary.name, passkey }),
@@ -61,7 +63,8 @@
     isLoading = true;
 
     try {
-      const res = await fetch('http://localhost:8008/auth/create', {
+      const base = import.meta.env.DEV ? 'http://localhost:8008' : '/api';
+      const res = await fetch(`${base}/auth/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newLibraryName.trim(), passkey: newLibraryPasskey }),

@@ -56,6 +56,7 @@ UI runs on `http://localhost:1738`. Both backend and frontend must be running.
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — Complete technical documentation, design decisions, limitations
 - **[project.md](project.md)** — Development notes and implementation details
 - **[BACKUP.md](BACKUP.md)** — Automated backup setup instructions
+- **[DEPLOY.md](DEPLOY.md)** — Production deployment guide (nginx + Cloudflare)
 
 ## Key Concepts
 
