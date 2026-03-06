@@ -32,6 +32,7 @@
   let authors = $state<{first_name: string; last_name: string}[]>([]);
   let selectedTagIds = $state<number[]>([]);
   let showSuggestions = $state(false);
+  let selectedSuggestionIndex = $state(-1);
 
   let newTagName = $state('');
   let newTagKind = $state('genre');
@@ -223,6 +224,7 @@
     firstName = '';
     lastName = '';
     showSuggestions = false;
+    selectedSuggestionIndex = -1;
   }
 
   function selectAuthor(a: {first_name: string; last_name: string}) {
@@ -232,6 +234,22 @@
     firstName = '';
     lastName = '';
     showSuggestions = false;
+    selectedSuggestionIndex = -1;
+  }
+
+  function handleAuthorKeydown(e: KeyboardEvent) {
+    if (!showSuggestions || authorSuggestions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, authorSuggestions.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, -1);
+    } else if (e.key === 'Enter' && selectedSuggestionIndex >= 0) {
+      e.preventDefault();
+      selectAuthor(authorSuggestions[selectedSuggestionIndex]);
+    }
   }
 
   function removeAuthor(a: {first_name: string; last_name: string}) {
@@ -361,7 +379,7 @@
           bind:value={firstName}
           onfocus={() => showSuggestions = true}
           onblur={() => setTimeout(() => showSuggestions = false, 200)}
-          onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAuthor(); } }}
+          onkeydown={handleAuthorKeydown}
         />
         <input
           class="input input-bordered input-sm flex-1"
@@ -369,14 +387,14 @@
           bind:value={lastName}
           onfocus={() => showSuggestions = true}
           onblur={() => setTimeout(() => showSuggestions = false, 200)}
-          onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAuthor(); } }}
+          onkeydown={handleAuthorKeydown}
         />
         <button class="btn btn-sm btn-outline" onclick={addAuthor}>Add</button>
       </div>
       {#if showSuggestions && authorSuggestions.length > 0}
         <ul class="menu bg-base-100 shadow-lg rounded-box z-10 w-full mt-1 max-h-48 overflow-y-auto">
-          {#each authorSuggestions as suggestion}
-            <li><button onmousedown={() => selectAuthor(suggestion)}>{suggestion.first_name} {suggestion.last_name}</button></li>
+          {#each authorSuggestions as suggestion, i}
+            <li class:bg-base-200={i === selectedSuggestionIndex}><button onmousedown={() => selectAuthor(suggestion)}>{suggestion.first_name} {suggestion.last_name}</button></li>
           {/each}
         </ul>
       {/if}

@@ -34,6 +34,7 @@
   let editFirstName = $state('');
   let editLastName = $state('');
   let showEditSuggestions = $state(false);
+  let selectedSuggestionIndex = $state(-1);
 
   // Author autocomplete for edit
   let allAuthors = $derived(
@@ -143,6 +144,7 @@
     editFirstName = '';
     editLastName = '';
     showEditSuggestions = false;
+    selectedSuggestionIndex = -1;
   }
 
   function selectEditAuthor(a: {first_name: string; last_name: string}) {
@@ -152,6 +154,22 @@
     editFirstName = '';
     editLastName = '';
     showEditSuggestions = false;
+    selectedSuggestionIndex = -1;
+  }
+
+  function handleEditAuthorKeydown(e: KeyboardEvent) {
+    if (!showEditSuggestions || editAuthorSuggestions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, editAuthorSuggestions.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, -1);
+    } else if (e.key === 'Enter' && selectedSuggestionIndex >= 0) {
+      e.preventDefault();
+      selectEditAuthor(editAuthorSuggestions[selectedSuggestionIndex]);
+    }
   }
 
   function removeEditAuthor(a: {first_name: string; last_name: string}) {
@@ -341,7 +359,7 @@
                     bind:value={editFirstName}
                     onfocus={() => showEditSuggestions = true}
                     onblur={() => setTimeout(() => showEditSuggestions = false, 200)}
-                    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEditAuthor(); } }}
+                    onkeydown={handleEditAuthorKeydown}
                   />
                   <input
                     class="input input-bordered input-sm flex-1"
@@ -349,14 +367,14 @@
                     bind:value={editLastName}
                     onfocus={() => showEditSuggestions = true}
                     onblur={() => setTimeout(() => showEditSuggestions = false, 200)}
-                    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEditAuthor(); } }}
+                    onkeydown={handleEditAuthorKeydown}
                   />
                   <button class="btn btn-sm btn-outline" onclick={addEditAuthor}>Add</button>
                 </div>
                 {#if showEditSuggestions && editAuthorSuggestions.length > 0}
                   <ul class="menu bg-base-100 shadow-lg rounded-box z-10 w-full mt-1 max-h-48 overflow-y-auto">
-                    {#each editAuthorSuggestions as suggestion}
-                      <li><button onmousedown={() => selectEditAuthor(suggestion)}>{suggestion.first_name} {suggestion.last_name}</button></li>
+                    {#each editAuthorSuggestions as suggestion, i}
+                      <li class:bg-base-200={i === selectedSuggestionIndex}><button onmousedown={() => selectEditAuthor(suggestion)}>{suggestion.first_name} {suggestion.last_name}</button></li>
                     {/each}
                   </ul>
                 {/if}
