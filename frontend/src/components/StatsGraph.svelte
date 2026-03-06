@@ -15,12 +15,14 @@
 
   function scheduleUpdate() {
     if (updateTimeout) clearTimeout(updateTimeout);
-    updateTimeout = setTimeout(() => {
+    updateTimeout = setTimeout(async () => {
       if (tagCanvas) {
-        loadTotals();
-        loadTagChart();
-        loadAuthorChart();
-        loadGrowthChart();
+        await Promise.all([
+          loadTotals(),
+          loadTagChart(),
+          loadAuthorChart(),
+          loadGrowthChart(),
+        ]);
       }
     }, 100) as unknown as number;
   }
