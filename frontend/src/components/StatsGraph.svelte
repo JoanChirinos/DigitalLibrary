@@ -141,15 +141,7 @@
 
   $effect(() => {
     kindFilter;
-    if (tagCanvas) loadTagChart();
-  });
-
-  $effect(() => {
     groupBy;
-    if (growthCanvas) loadGrowthChart();
-  });
-
-  $effect(() => {
     filterTagIds;
     $showArchived;
     scheduleUpdate();
