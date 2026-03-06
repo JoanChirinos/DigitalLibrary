@@ -43,6 +43,7 @@
   let lookupError = $state('');
   let suggestedSubjects = $state<string[]>([]);
   let lastLookupTime = $state<number | null>(null);
+  let now = $state(Date.now());
 
   // Barcode scanner state
   let isScanning = $state(false);
@@ -54,10 +55,16 @@
     if (cookie) {
       lastLookupTime = parseInt(cookie.split('=')[1]);
     }
+
+    const interval = setInterval(() => {
+      now = Date.now();
+    }, 1000);
+
+    return () => clearInterval(interval);
   });
 
-  let canLookup = $derived(lastLookupTime === null || Date.now() - lastLookupTime >= 5000);
-  let timeRemaining = $derived(lastLookupTime ? Math.max(0, 5 - Math.floor((Date.now() - lastLookupTime) / 1000)) : 0);
+  let canLookup = $derived(lastLookupTime === null || now - lastLookupTime >= 5000);
+  let timeRemaining = $derived(lastLookupTime ? Math.max(0, 5 - Math.floor((now - lastLookupTime) / 1000)) : 0);
 
   let allAuthors = $derived(
     Object.values(
