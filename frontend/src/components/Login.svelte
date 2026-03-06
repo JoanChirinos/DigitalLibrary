@@ -15,7 +15,7 @@
   let showCreate = $state(false);
   let error = $state('');
   let isLoading = $state(false);
-  let passkeyInput: HTMLInputElement;
+  let passkeyInput = $state<HTMLInputElement>();
 
   onMount(async () => {
     const base = import.meta.env.DEV ? 'http://localhost:8008' : '/api';

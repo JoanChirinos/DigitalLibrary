@@ -79,6 +79,6 @@
         <button class="btn btn-error" onclick={() => handleDelete(deleteConfirmTag!.id)}>Delete</button>
       </div>
     </div>
-    <div class="modal-backdrop" onclick={() => deleteConfirmTag = null}></div>
+    <button class="modal-backdrop" onclick={() => deleteConfirmTag = null} aria-label="Close modal"></button>
   </div>
 {/if}

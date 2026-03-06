@@ -284,8 +284,9 @@
     <div class="mb-4 p-3 bg-base-200 rounded-lg">
       <div class="flex gap-2 items-end">
         <div class="flex-1">
-          <label class="text-sm font-semibold">ISBN Lookup</label>
+          <label class="text-sm font-semibold" for="isbn-lookup-input">ISBN Lookup</label>
           <input
+            id="isbn-lookup-input"
             class="input input-bordered input-sm w-full mt-1"
             placeholder="Enter ISBN"
             bind:value={isbnInput}

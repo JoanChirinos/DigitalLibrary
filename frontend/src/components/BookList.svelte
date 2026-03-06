@@ -391,7 +391,7 @@
           {:else}
             <!-- View mode -->
             <div class="card-body flex-row gap-3 items-center">
-              <div class="flex-1 flex gap-3 cursor-pointer" onclick={() => detailBook = book}>
+              <button class="flex-1 flex gap-3 cursor-pointer bg-transparent border-0 p-0 text-left" onclick={() => detailBook = book}>
                 {#if book.cover_url}
                   <img src={book.cover_url} alt={book.title} class="w-16 h-24 object-cover rounded" loading="lazy" />
                 {:else}
@@ -409,7 +409,7 @@
                   </div>
                   <p class="text-xs opacity-50 mt-1">{utcToLocalDate(book.scan_date)}</p>
                 </div>
-              </div>
+              </button>
               <div class="flex gap-1">
                 <button class="btn btn-ghost btn-sm" onclick={() => startEdit(book)}>
                   <Edit size={16} />
@@ -470,7 +470,7 @@
         </div>
       </div>
     </div>
-    <div class="modal-backdrop" onclick={() => detailBook = null}></div>
+    <button class="modal-backdrop" onclick={() => detailBook = null} aria-label="Close modal"></button>
   </div>
 {/if}
 
@@ -485,6 +485,6 @@
         <button class="btn btn-error" onclick={() => handleDelete(deleteConfirmBook!.id)}>Delete</button>
       </div>
     </div>
-    <div class="modal-backdrop" onclick={() => deleteConfirmBook = null}></div>
+    <button class="modal-backdrop" onclick={() => deleteConfirmBook = null} aria-label="Close modal"></button>
   </div>
 {/if}
