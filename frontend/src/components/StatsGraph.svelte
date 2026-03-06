@@ -11,6 +11,19 @@
   let kindFilter = $state('');
   let groupBy = $state('month');
   let filterTagIds = $state<number[]>([]);
+  let updateTimeout: number | null = null;
+
+  function scheduleUpdate() {
+    if (updateTimeout) clearTimeout(updateTimeout);
+    updateTimeout = setTimeout(() => {
+      if (tagCanvas) {
+        loadTotals();
+        loadTagChart();
+        loadAuthorChart();
+        loadGrowthChart();
+      }
+    }, 100) as unknown as number;
+  }
 
   const kindOrder = ['owner', 'genre', 'custom'];
   let tagsByKind = $derived(
@@ -110,6 +123,7 @@
       },
       options: {
         responsive: true,
+        animation: false,
         plugins: { legend: { display: false } },
         scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
       },
@@ -135,22 +149,8 @@
 
   $effect(() => {
     filterTagIds;
-    if (tagCanvas) {
-      loadTotals();
-      loadTagChart();
-      loadAuthorChart();
-      loadGrowthChart();
-    }
-  });
-
-  $effect(() => {
     $showArchived;
-    if (tagCanvas) {
-      loadTotals();
-      loadTagChart();
-      loadAuthorChart();
-      loadGrowthChart();
-    }
+    scheduleUpdate();
   });
 </script>
 
