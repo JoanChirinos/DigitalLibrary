@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { books, tags } from '../stores';
+  import { books, tags, showArchived } from '../stores';
   import { deleteBook } from '../api';
   import { loadBooks } from '../stores';
-  import { Trash2, X, Edit, Save } from 'lucide-svelte';
+  import { Trash2, X, Edit, Save, Archive, ArchiveRestore } from 'lucide-svelte';
   import type { Book, Tag } from '../api';
   import Fuse from 'fuse.js';
-  import { updateBook, createTag } from '../api';
+  import { updateBook, createTag, toggleArchive } from '../api';
   import { loadTags } from '../stores';
 
   function utcToLocalDate(utc: string): string {
@@ -72,6 +72,11 @@
 
   let filteredBooks = $derived.by(() => {
     let result = [...$books];
+
+    // Filter archived
+    if (!$showArchived) {
+      result = result.filter(book => !book.archived);
+    }
 
     // Search
     if (searchQuery.trim()) {
@@ -185,6 +190,11 @@
     }
   }
 
+  async function handleArchive(id: number) {
+    await toggleArchive(id);
+    await loadBooks();
+  }
+
   async function handleDelete(id: number) {
     await deleteBook(id);
     await loadBooks();
@@ -194,8 +204,8 @@
 
 <section>
   <!-- Search -->
-  <div class="mb-4">
-    <div class="relative">
+  <div class="flex gap-4 items-center mb-4">
+    <div class="flex-1 relative">
       <input
         class="input input-bordered w-full"
         placeholder="Search books by title or author..."
@@ -211,6 +221,10 @@
         </button>
       {/if}
     </div>
+    <label class="label cursor-pointer gap-2 justify-start">
+      <input type="checkbox" class="checkbox checkbox-sm" bind:checked={$showArchived} />
+      <span class="label-text">Show archived</span>
+    </label>
   </div>
 
   <!-- Sort + Filter controls -->
@@ -309,14 +323,14 @@
     <p class="text-sm opacity-60 mb-2">{filteredBooks.length} books</p>
     <div class="flex flex-col gap-3">
       {#each pagedBooks as book}
-        <div class="card card-compact bg-base-100 shadow">
+        <div class="card card-compact bg-base-100 shadow" class:opacity-50={book.archived}>
           {#if editingId === book.id}
             <!-- Edit mode -->
             <div class="card-body">
               <input class="input input-bordered input-sm w-full mb-2" placeholder="Title" bind:value={editTitle} />
               <input class="input input-bordered input-sm w-full mb-2" placeholder="ISBN" bind:value={editIsbn} />
               <input class="input input-bordered input-sm w-full mb-2" placeholder="Cover URL" bind:value={editCoverUrl} />
-              
+
               <!-- Authors -->
               <div class="mb-2">
                 <span class="text-sm font-semibold">Authors</span>
@@ -411,10 +425,17 @@
                 </div>
               </button>
               <div class="flex gap-1">
-                <button class="btn btn-ghost btn-sm" onclick={() => startEdit(book)}>
+                <button class="btn btn-ghost btn-sm" onclick={() => startEdit(book)} title="Edit">
                   <Edit size={16} />
                 </button>
-                <button class="btn btn-ghost btn-sm" onclick={() => deleteConfirmBook = book}>
+                <button class="btn btn-ghost btn-sm" onclick={() => handleArchive(book.id)} title={book.archived ? "Unarchive" : "Archive"}>
+                  {#if book.archived}
+                    <ArchiveRestore size={16} />
+                  {:else}
+                    <Archive size={16} />
+                  {/if}
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick={() => deleteConfirmBook = book} title="Delete">
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -439,20 +460,20 @@
   <div class="modal modal-open">
     <div class="modal-box max-w-2xl">
       <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick={() => detailBook = null}>✕</button>
-      
+
       <div class="flex gap-4">
         {#if detailBook.cover_url}
           <img src={detailBook.cover_url} alt={detailBook.title} class="w-48 h-72 object-cover rounded shadow-lg" />
         {:else}
           <div class="w-48 h-72 bg-base-300 rounded flex items-center justify-center text-sm opacity-50">No cover</div>
         {/if}
-        
+
         <div class="flex-1">
           <h2 class="text-2xl font-bold mb-2">{detailBook.title}</h2>
           <p class="text-lg mb-3">
             {detailBook.authors.map(a => `${a.first_name} ${a.last_name}`).join(', ') || 'Unknown author'}
           </p>
-          
+
           <div class="mb-3">
             <span class="text-sm font-semibold opacity-60">Tags</span>
             <div class="flex flex-wrap gap-1 mt-1">
@@ -461,11 +482,11 @@
               {/each}
             </div>
           </div>
-          
+
           {#if detailBook.isbn}
             <p class="text-sm mb-1"><span class="font-semibold">ISBN:</span> {detailBook.isbn}</p>
           {/if}
-          
+
           <p class="text-sm opacity-60">Scanned: {utcToLocalDateTime(detailBook.scan_date)}</p>
         </div>
       </div>

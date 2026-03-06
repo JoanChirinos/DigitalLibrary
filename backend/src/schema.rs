@@ -14,6 +14,7 @@ diesel::table! {
         isbn -> Nullable<Text>,
         cover_url -> Nullable<Text>,
         library_id -> Integer,
+        archived -> Bool,
     }
 }
 

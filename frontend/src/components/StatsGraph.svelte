@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { Chart, BarController, LineController, BarElement, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend } from 'chart.js';
   import { fetchTotals, fetchByTag, fetchByAuthor, fetchGrowth } from '../api';
-  import { tags } from '../stores';
+  import { tags, showArchived, books } from '../stores';
   import type { Totals, TagCount, AuthorCount, GrowthBucket, Tag } from '../api';
 
   Chart.register(BarController, LineController, BarElement, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend);
@@ -42,11 +42,11 @@
   let growthCanvas: HTMLCanvasElement;
 
   async function loadTotals() {
-    totals = await fetchTotals(filterTagIds.length ? filterTagIds : undefined);
+    totals = await fetchTotals(filterTagIds.length ? filterTagIds : undefined, undefined, undefined, $showArchived ? undefined : false);
   }
 
   async function loadTagChart() {
-    const raw = await fetchByTag(kindFilter || undefined, filterTagIds.length ? filterTagIds : undefined);
+    const raw = await fetchByTag(kindFilter || undefined, filterTagIds.length ? filterTagIds : undefined, undefined, undefined, $showArchived ? undefined : false);
     const filterNames = ($tags).filter(t => filterTagIds.includes(t.id)).map(t => t.tag_name ?? t.name);
     const data = raw.filter(d => !filterTagIds.some(id => {
       const t = ($tags).find(t => t.id === id);
@@ -73,7 +73,7 @@
   }
 
   async function loadAuthorChart() {
-    const data = await fetchByAuthor(filterTagIds.length ? filterTagIds : undefined);
+    const data = await fetchByAuthor(filterTagIds.length ? filterTagIds : undefined, undefined, undefined, $showArchived ? undefined : false);
     const top20 = data.slice(0, 20);
     authorChart?.destroy();
     authorChart = new Chart(authorCanvas, {
@@ -96,7 +96,7 @@
   }
 
   async function loadGrowthChart() {
-    const data = await fetchGrowth(groupBy, filterTagIds.length ? filterTagIds : undefined);
+    const data = await fetchGrowth(groupBy, filterTagIds.length ? filterTagIds : undefined, undefined, undefined, $showArchived ? undefined : false);
     growthChart?.destroy();
     growthChart = new Chart(growthCanvas, {
       type: 'bar',
@@ -142,13 +142,29 @@
       loadGrowthChart();
     }
   });
+
+  $effect(() => {
+    $showArchived;
+    if (tagCanvas) {
+      loadTotals();
+      loadTagChart();
+      loadAuthorChart();
+      loadGrowthChart();
+    }
+  });
 </script>
 
 <section>
   <!-- Tag filters -->
   <div class="card bg-base-100 shadow mb-4">
     <div class="card-body py-3">
-      <span class="text-sm font-semibold">Filter by tags</span>
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-sm font-semibold">Filter by tags</span>
+        <label class="label cursor-pointer gap-2 justify-start">
+          <input type="checkbox" class="checkbox checkbox-sm" bind:checked={$showArchived} />
+          <span class="label-text">Show archived</span>
+        </label>
+      </div>
       <div class="flex flex-wrap gap-3 mt-1">
         {#each tagsByKind as [kind, kindTags]}
           <div>

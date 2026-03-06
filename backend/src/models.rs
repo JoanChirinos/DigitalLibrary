@@ -28,6 +28,7 @@ pub struct Book {
     pub isbn: Option<String>,
     pub cover_url: Option<String>,
     pub library_id: i32,
+    pub archived: bool,
 }
 
 #[derive(Insertable, Deserialize)]
@@ -38,6 +39,8 @@ pub struct NewBook {
     pub isbn: Option<String>,
     pub cover_url: Option<String>,
     pub library_id: i32,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 // --- Authors ---

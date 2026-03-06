@@ -28,6 +28,15 @@ pub struct StatsFilter {
     tags: Option<String>,
     start: Option<String>,
     end: Option<String>,
+    archived: Option<String>,
+}
+
+fn parse_archived(archived: &Option<String>) -> Option<bool> {
+    archived.as_ref().and_then(|s| match s.as_str() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    })
 }
 
 fn parse_tag_ids(tags: &Option<String>) -> Vec<i32> {
@@ -42,8 +51,13 @@ fn filtered_book_ids(
     tag_ids: &[i32],
     start: &Option<String>,
     end: &Option<String>,
+    archived: &Option<bool>,
 ) -> Result<Vec<i32>, diesel::result::Error> {
     let mut query = books::table.filter(books::library_id.eq(library_id)).into_boxed().select(books::id);
+
+    if let Some(arch) = archived {
+        query = query.filter(books::archived.eq(*arch));
+    }
 
     if !tag_ids.is_empty() {
         let matching: Vec<i32> = book_tags::table
@@ -79,14 +93,28 @@ async fn totals(
     let library_id = extract_library_id(&token_store, auth)?;
     let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tag_ids = parse_tag_ids(&filter.tags);
-    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.start, &filter.end)
+    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.start, &filter.end, &parse_archived(&filter.archived))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let book_count = ids.len() as i64;
-    let author_count: i64 = authors::table.filter(authors::library_id.eq(library_id)).count().get_result(&mut conn)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let tag_count: i64 = tags::table.filter(tags::library_id.eq(library_id)).count().get_result(&mut conn)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Count authors that have books in the filtered set
+    let author_count: i64 = book_authors::table
+        .filter(book_authors::book_id.eq_any(&ids))
+        .select(book_authors::author_id)
+        .distinct()
+        .load::<i32>(&mut conn)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .len() as i64;
+
+    // Count tags that have books in the filtered set
+    let tag_count: i64 = book_tags::table
+        .filter(book_tags::book_id.eq_any(&ids))
+        .select(book_tags::tag_id)
+        .distinct()
+        .load::<i32>(&mut conn)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .len() as i64;
 
     Ok(Json(Totals { books: book_count, authors: author_count, tags: tag_count }))
 }
@@ -113,7 +141,7 @@ async fn by_tag(
     let library_id = extract_library_id(&token_store, auth)?;
     let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tag_ids = parse_tag_ids(&filter.base.tags);
-    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.base.start, &filter.base.end)
+    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.base.start, &filter.base.end, &parse_archived(&filter.base.archived))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut query = book_tags::table
@@ -149,7 +177,7 @@ async fn by_author(
     let library_id = extract_library_id(&token_store, auth)?;
     let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tag_ids = parse_tag_ids(&filter.tags);
-    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.start, &filter.end)
+    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.start, &filter.end, &parse_archived(&filter.archived))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let all_authors: Vec<(i32, String, String)> = authors::table
@@ -195,7 +223,7 @@ async fn growth(
     let library_id = extract_library_id(&token_store, auth)?;
     let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tag_ids = parse_tag_ids(&filter.base.tags);
-    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.base.start, &filter.base.end)
+    let ids = filtered_book_ids(&mut conn, library_id, &tag_ids, &filter.base.start, &filter.base.end, &parse_archived(&filter.base.archived))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let dates: Vec<String> = books::table

@@ -18,7 +18,7 @@ mkdir -p "$BACKUP_DIR"
 if [ -f "$DB_PATH" ]; then
     sqlite3 "$DB_PATH" ".backup '$BACKUP_DIR/library_$TIMESTAMP.db'"
     echo "$(date): Backup created: library_$TIMESTAMP.db" >> "$BACKUP_DIR/backup.log"
-    
+
     # Keep only the last N backups
     ls -t "$BACKUP_DIR"/library_*.db | tail -n +$((KEEP_BACKUPS + 1)) | xargs rm -f 2>/dev/null || true
 else

@@ -94,7 +94,7 @@
     isScanning = true;
     await tick(); // Wait for DOM to update
     scanner = new Html5Qrcode('barcode-reader');
-    
+
     try {
       await scanner.start(
         { facingMode: 'environment' },
@@ -137,7 +137,7 @@
 
     try {
       const result = await lookupISBN(isbnInput);
-      
+
       // Auto-fill fields
       title = result.title;
       scanDate = nowLocal();
@@ -151,10 +151,10 @@
         const parts = name.split(/\s+/);
         const lastNameParsed = parts.pop() || '';
         const firstNameParsed = parts.join(' ') || '';
-        
+
         // Try fuzzy match
         const matches = authorFuse.search(`${firstNameParsed} ${lastNameParsed}`);
-        
+
         if (matches.length > 0 && matches[0].score! <= 0.5) {
           // Good match found, add it
           const match = matches[0].item;
@@ -185,7 +185,7 @@
       }
 
       // Store non-matching subjects as suggestions (lowercase)
-      const matched = result.subjects.filter(s => 
+      const matched = result.subjects.filter(s =>
         genreTags.some(t => t.name.toLowerCase() === s.toLowerCase())
       );
       suggestedSubjects = result.subjects.filter(s => !matched.includes(s)).map(s => s.toLowerCase());

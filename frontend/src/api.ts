@@ -1,4 +1,4 @@
-const BASE = import.meta.env.DEV ? 'http://localhost:8008' : '/api';
+const BASE = import.meta.env.DEV ? 'http://localhost:8008/api' : '/api';
 
 function getAuthToken(): string | null {
   const cookie = document.cookie.split('; ').find(c => c.startsWith('auth_token='));
@@ -41,6 +41,7 @@ export interface Book {
   cover_url: string | null;
   authors: Author[];
   tags: Tag[];
+  archived: boolean;
 }
 
 export interface CreateBookRequest {
@@ -86,6 +87,14 @@ export async function deleteBook(id: number): Promise<void> {
   await fetch(`${BASE}/books/${id}`, { method: 'DELETE', headers: authHeaders() });
 }
 
+export async function toggleArchive(id: number): Promise<Book> {
+  const res = await fetch(`${BASE}/books/${id}/archive`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
 // --- Tags ---
 
 export async function fetchTags(kind?: string): Promise<Tag[]> {
@@ -119,7 +128,7 @@ export interface ISBNLookupResult {
 export async function lookupISBN(isbn: string): Promise<ISBNLookupResult> {
   const cleanISBN = isbn.replace(/[^0-9X]/gi, '');
   const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanISBN}&jscmd=data&format=json`;
-  
+
   let res: Response;
   try {
     res = await fetch(url);
@@ -178,42 +187,45 @@ export interface GrowthBucket {
   count: number;
 }
 
-function statsParams(tags?: number[], start?: string, end?: string): string {
+function statsParams(tags?: number[], start?: string, end?: string, archived?: boolean): string {
   const params = new URLSearchParams();
   if (tags?.length) params.set('tags', tags.join(','));
   if (start) params.set('start', start);
   if (end) params.set('end', end);
+  if (archived !== undefined) params.set('archived', String(archived));
   const str = params.toString();
   return str ? `?${str}` : '';
 }
 
-export async function fetchTotals(tags?: number[], start?: string, end?: string): Promise<Totals> {
-  const res = await fetch(`${BASE}/stats/totals${statsParams(tags, start, end)}`, { headers: authHeaders() });
+export async function fetchTotals(tags?: number[], start?: string, end?: string, archived?: boolean): Promise<Totals> {
+  const res = await fetch(`${BASE}/stats/totals${statsParams(tags, start, end, archived)}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
-export async function fetchByTag(kind?: string, tags?: number[], start?: string, end?: string): Promise<TagCount[]> {
+export async function fetchByTag(kind?: string, tags?: number[], start?: string, end?: string, archived?: boolean): Promise<TagCount[]> {
   const params = new URLSearchParams();
   if (kind) params.set('kind', kind);
   if (tags?.length) params.set('tags', tags.join(','));
   if (start) params.set('start', start);
   if (end) params.set('end', end);
+  if (archived !== undefined) params.set('archived', String(archived));
   const str = params.toString();
   const res = await fetch(`${BASE}/stats/by-tag${str ? `?${str}` : ''}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
-export async function fetchByAuthor(tags?: number[], start?: string, end?: string): Promise<AuthorCount[]> {
-  const res = await fetch(`${BASE}/stats/by-author${statsParams(tags, start, end)}`, { headers: authHeaders() });
+export async function fetchByAuthor(tags?: number[], start?: string, end?: string, archived?: boolean): Promise<AuthorCount[]> {
+  const res = await fetch(`${BASE}/stats/by-author${statsParams(tags, start, end, archived)}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
-export async function fetchGrowth(groupBy?: string, tags?: number[], start?: string, end?: string): Promise<GrowthBucket[]> {
+export async function fetchGrowth(groupBy?: string, tags?: number[], start?: string, end?: string, archived?: boolean): Promise<GrowthBucket[]> {
   const params = new URLSearchParams();
   if (groupBy) params.set('group_by', groupBy);
   if (tags?.length) params.set('tags', tags.join(','));
   if (start) params.set('start', start);
   if (end) params.set('end', end);
+  if (archived !== undefined) params.set('archived', String(archived));
   const str = params.toString();
   const res = await fetch(`${BASE}/stats/growth${str ? `?${str}` : ''}`, { headers: authHeaders() });
   return handleResponse(res);

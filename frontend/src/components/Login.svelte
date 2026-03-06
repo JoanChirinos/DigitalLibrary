@@ -18,7 +18,7 @@
   let passkeyInput = $state<HTMLInputElement>();
 
   onMount(async () => {
-    const base = import.meta.env.DEV ? 'http://localhost:8008' : '/api';
+    const base = import.meta.env.DEV ? 'http://localhost:8008/api' : '/api';
     const res = await fetch(`${base}/auth/libraries`);
     libraries = await res.json();
   });
@@ -35,7 +35,7 @@
     isLoading = true;
 
     try {
-      const base = import.meta.env.DEV ? 'http://localhost:8008' : '/api';
+      const base = import.meta.env.DEV ? 'http://localhost:8008/api' : '/api';
       const res = await fetch(`${base}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,7 +63,7 @@
     isLoading = true;
 
     try {
-      const base = import.meta.env.DEV ? 'http://localhost:8008' : '/api';
+      const base = import.meta.env.DEV ? 'http://localhost:8008/api' : '/api';
       const res = await fetch(`${base}/auth/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

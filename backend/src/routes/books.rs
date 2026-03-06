@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use axum_extra::{
@@ -19,6 +19,7 @@ pub fn router() -> Router<(DbPool, TokenStore)> {
     Router::new()
         .route("/", get(list_books).post(create_book))
         .route("/{id}", get(get_book).put(update_book).delete(delete_book))
+        .route("/{id}/archive", post(toggle_archive))
 }
 
 #[derive(Serialize)]
@@ -115,6 +116,7 @@ async fn create_book(
         isbn: req.isbn,
         cover_url: req.cover_url,
         library_id,
+        archived: false,
     };
     diesel::insert_into(books::table)
         .values(&new_book)
@@ -273,4 +275,34 @@ async fn delete_book(
     .execute(&mut conn)
     .unwrap_or(0);
     if deleted > 0 { StatusCode::NO_CONTENT } else { StatusCode::NOT_FOUND }
+}
+
+async fn toggle_archive(
+    State((pool, token_store)): State<(DbPool, TokenStore)>,
+    auth: TypedHeader<Authorization<Bearer>>,
+    Path(id): Path<i32>,
+) -> Result<Json<BookResponse>, StatusCode> {
+    let library_id = extract_library_id(&token_store, auth)?;
+    let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let book = books::table
+        .filter(books::library_id.eq(library_id))
+        .find(id)
+        .first::<Book>(&mut conn)
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    diesel::update(books::table.filter(books::library_id.eq(library_id)).find(id))
+        .set(books::archived.eq(!book.archived))
+        .execute(&mut conn)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let updated = books::table
+        .filter(books::library_id.eq(library_id))
+        .find(id)
+        .first::<Book>(&mut conn)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let resp = load_book_response(&mut conn, updated, library_id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(resp))
 }
