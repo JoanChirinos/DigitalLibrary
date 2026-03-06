@@ -11,21 +11,6 @@
   let kindFilter = $state('');
   let groupBy = $state('month');
   let filterTagIds = $state<number[]>([]);
-  let updateTimeout: number | null = null;
-
-  function scheduleUpdate() {
-    if (updateTimeout) clearTimeout(updateTimeout);
-    updateTimeout = setTimeout(async () => {
-      if (tagCanvas) {
-        await Promise.all([
-          loadTotals(),
-          loadTagChart(),
-          loadAuthorChart(),
-          loadGrowthChart(),
-        ]);
-      }
-    }, 100) as unknown as number;
-  }
 
   const kindOrder = ['owner', 'genre', 'custom'];
   let tagsByKind = $derived(
@@ -144,7 +129,14 @@
     groupBy;
     filterTagIds;
     $showArchived;
-    scheduleUpdate();
+    if (tagCanvas) {
+      Promise.all([
+        loadTotals(),
+        loadTagChart(),
+        loadAuthorChart(),
+        loadGrowthChart(),
+      ]);
+    }
   });
 </script>
 
