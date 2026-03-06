@@ -24,3 +24,6 @@ debug/
 
 # mise
 mise.toml
+
+# Generated launchd plists
+*.plist

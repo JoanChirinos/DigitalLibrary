@@ -133,49 +133,33 @@ Add A record:
 
 ---
 
-## Step 6: Auto-Start Backend (launchd)
+## Step 6: Auto-Start Services (launchd)
 
-**Create `~/Library/LaunchAgents/com.digitallibrary.backend.plist`:**
+Run the install script to generate and load the launchd plists:
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.digitallibrary.backend</string>
-    
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/joanchir/Desktop/DigitalLibrary/backend/target/release/digital-library</string>
-    </array>
-    
-    <key>WorkingDirectory</key>
-    <string>/Users/joanchir/Desktop/DigitalLibrary/backend</string>
-    
-    <key>RunAtLoad</key>
-    <true/>
-    
-    <key>KeepAlive</key>
-    <true/>
-    
-    <key>StandardOutPath</key>
-    <string>/Users/joanchir/Desktop/DigitalLibrary/backend/stdout.log</string>
-    
-    <key>StandardErrorPath</key>
-    <string>/Users/joanchir/Desktop/DigitalLibrary/backend/stderr.log</string>
-</dict>
-</plist>
-```
-
-**Load it:**
 ```bash
-launchctl load ~/Library/LaunchAgents/com.digitallibrary.backend.plist
+./scripts/install.sh
 ```
 
-**Check status:**
+This creates and loads:
+- `com.digitallibrary.backend.plist` — Auto-starts backend on boot
+- `com.digitallibrary.backup.plist` — Daily backups at 2am
+
+**Verify services are running:**
 ```bash
 launchctl list | grep digitallibrary
+```
+
+**Manual control:**
+```bash
+# Stop backend
+launchctl unload ~/Library/LaunchAgents/com.digitallibrary.backend.plist
+
+# Start backend
+launchctl load ~/Library/LaunchAgents/com.digitallibrary.backend.plist
+
+# View logs
+tail -f ~/path/to/DigitalLibrary/backend/stdout.log
 ```
 
 ---

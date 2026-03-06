@@ -1,9 +1,13 @@
 #!/bin/bash
 set -e
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # Configuration
 BACKUP_DIR="$HOME/DigitalLibrary-backups"
-DB_PATH="$HOME/Desktop/DigitalLibrary/backend/library.db"
+DB_PATH="$PROJECT_ROOT/backend/library.db"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 KEEP_BACKUPS=30
 

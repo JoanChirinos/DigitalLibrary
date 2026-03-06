@@ -7,7 +7,7 @@
     
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/joanchir/Desktop/DigitalLibrary/scripts/backup.sh</string>
+        <string>{{PROJECT_ROOT}}/scripts/backup.sh</string>
     </array>
     
     <key>StartCalendarInterval</key>

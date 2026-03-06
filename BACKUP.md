@@ -6,19 +6,17 @@ The backup script runs daily at 2:00 AM and keeps the last 30 backups.
 
 ### Option A: launchd (macOS, recommended)
 
-1. Copy the launchd plist to your LaunchAgents directory:
+Run the install script:
+
 ```bash
-cp scripts/com.digitallibrary.backup.plist ~/Library/LaunchAgents/
+./scripts/install.sh
 ```
 
-2. Load the job:
-```bash
-launchctl load ~/Library/LaunchAgents/com.digitallibrary.backup.plist
-```
+This generates the plist with correct paths and loads it.
 
-3. Verify it's loaded:
+**Verify:**
 ```bash
-launchctl list | grep digitallibrary
+launchctl list | grep digitallibrary.backup
 ```
 
 ### Option B: cron (macOS/Linux)
