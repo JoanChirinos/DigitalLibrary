@@ -2,7 +2,7 @@
   import { books, tags, showArchived } from '../stores';
   import { deleteBook } from '../api';
   import { loadBooks } from '../stores';
-  import { Trash2, X, Edit, Save, Archive, ArchiveRestore } from 'lucide-svelte';
+  import { Trash2, X, Edit, Save, Archive, ArchiveRestore, Plus } from 'lucide-svelte';
   import type { Book, Tag } from '../api';
   import Fuse from 'fuse.js';
   import { updateBook, createTag, toggleArchive } from '../api';
@@ -35,6 +35,9 @@
   let editLastName = $state('');
   let showEditSuggestions = $state(false);
   let selectedSuggestionIndex = $state(-1);
+  let editNewTagName = $state('');
+  let editNewTagKind = $state('genre');
+  let editShowNewTag = $state(false);
 
   // Author autocomplete for edit
   let allAuthors = $derived(
@@ -129,10 +132,14 @@
     editTagIds = book.tags.map(t => t.id);
     editFirstName = '';
     editLastName = '';
+    editNewTagName = '';
+    editShowNewTag = false;
   }
 
   function cancelEdit() {
     editingId = null;
+    editShowNewTag = false;
+    editNewTagName = '';
   }
 
   function addEditAuthor() {
@@ -182,6 +189,17 @@
     } else {
       editTagIds = [...editTagIds, id];
     }
+  }
+
+  async function handleEditNewTag() {
+    const name = editNewTagName.trim();
+    if (!name) return;
+    const finalName = editNewTagKind === 'genre' ? name.toLowerCase() : name;
+    const tag = await createTag(finalName, editNewTagKind);
+    await loadTags();
+    editTagIds = [...editTagIds, tag.id];
+    editNewTagName = '';
+    editShowNewTag = false;
   }
 
   async function saveEdit() {
@@ -408,6 +426,23 @@
                     </div>
                   {/each}
                 </div>
+
+                {#if editShowNewTag}
+                  <div class="flex gap-2 mt-2 items-center">
+                    <input class="input input-bordered input-sm" placeholder="Tag name" bind:value={editNewTagName} />
+                    <select class="select select-bordered select-sm" bind:value={editNewTagKind}>
+                      <option value="genre">genre</option>
+                      <option value="owner">owner</option>
+                      <option value="custom">custom</option>
+                    </select>
+                    <button class="btn btn-sm btn-primary" onclick={handleEditNewTag}>Create</button>
+                    <button class="btn btn-sm btn-ghost" onclick={() => editShowNewTag = false}>Cancel</button>
+                  </div>
+                {:else}
+                  <button class="btn btn-xs btn-ghost mt-2" onclick={() => editShowNewTag = true}>
+                    <Plus size={14} /> New tag
+                  </button>
+                {/if}
               </div>
 
               <!-- Scan date (read-only) -->
