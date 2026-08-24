@@ -2,7 +2,7 @@
   import { books, tags, loadBooks, loadTags } from '../stores';
   import { createBook, createTag, lookupISBN } from '../api';
   import type { Tag } from '../api';
-  import { Plus, X, Search, Camera } from 'lucide-svelte';
+  import { Plus, X, Search, Camera, Flashlight } from 'lucide-svelte';
   import Fuse from 'fuse.js';
   import { onMount, tick } from 'svelte';
   import { Html5Qrcode } from 'html5-qrcode';
@@ -50,6 +50,10 @@
   let isScanning = $state(false);
   let scanError = $state('');
   let scanner: Html5Qrcode | null = null;
+  let canZoom = $state(false);
+  let canTorch = $state(false);
+  let zoom2x = $state(false);
+  let torchOn = $state(false);
 
   onMount(() => {
     const cookie = document.cookie.split('; ').find(c => c.startsWith('lastISBNLookup='));
@@ -100,6 +104,10 @@
   async function startScanner() {
     scanError = '';
     isScanning = true;
+    canZoom = false;
+    canTorch = false;
+    zoom2x = false;
+    torchOn = false;
     await tick(); // Wait for DOM to update
     scanner = new Html5Qrcode('barcode-reader');
 
@@ -116,14 +124,50 @@
         },
         undefined
       );
+      try {
+        const caps = scanner.getRunningTrackCameraCapabilities();
+        canZoom = caps.zoomFeature().isSupported() && caps.zoomFeature().max() >= 2;
+        canTorch = caps.torchFeature().isSupported();
+      } catch {
+        // Capabilities unavailable on this device; leave toggles hidden.
+      }
     } catch (e: any) {
       scanError = e.message?.includes('NotAllowedError') ? 'Camera permission denied' : 'Failed to start camera';
       isScanning = false;
     }
   }
 
+  async function toggleZoom() {
+    if (!scanner) return;
+    const zf = scanner.getRunningTrackCameraCapabilities().zoomFeature();
+    if (!zf.isSupported()) return;
+    zoom2x = !zoom2x;
+    const target = zoom2x ? Math.min(2, zf.max()) : Math.max(1, zf.min());
+    try {
+      await zf.apply(target);
+    } catch {
+      // Ignore; some devices reject mid-stream zoom changes.
+    }
+  }
+
+  async function toggleTorch() {
+    if (!scanner) return;
+    const tf = scanner.getRunningTrackCameraCapabilities().torchFeature();
+    if (!tf.isSupported()) return;
+    torchOn = !torchOn;
+    try {
+      await tf.apply(torchOn);
+    } catch {
+      // Ignore; some devices reject mid-stream torch changes.
+    }
+  }
+
   async function stopScanner() {
     isScanning = false;
+    canZoom = false;
+    canTorch = false;
+    zoom2x = false;
+    torchOn = false;
     if (scanner) {
       try {
         const state = await scanner.getState();
@@ -460,6 +504,20 @@
       <h3 class="font-bold text-lg mb-2">Scan Barcode</h3>
       <p class="text-sm opacity-70 mb-3">Point camera at ISBN barcode</p>
       <div id="barcode-reader" class="w-full"></div>
+      {#if canZoom || canTorch}
+        <div class="flex gap-2 mt-3 justify-center">
+          {#if canZoom}
+            <button class="btn btn-sm" class:btn-active={zoom2x} onclick={toggleZoom}>
+              {zoom2x ? '2x' : '1x'}
+            </button>
+          {/if}
+          {#if canTorch}
+            <button class="btn btn-sm" class:btn-active={torchOn} onclick={toggleTorch}>
+              <Flashlight size={16} /> {torchOn ? 'On' : 'Off'}
+            </button>
+          {/if}
+        </div>
+      {/if}
       {#if scanError}
         <div class="alert alert-error alert-sm mt-2">{scanError}</div>
       {/if}
