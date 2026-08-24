@@ -30,6 +30,7 @@ export interface Tag {
 export interface Author {
   id: number;
   first_name: string;
+  middle_name: string | null;
   last_name: string;
 }
 
@@ -49,7 +50,7 @@ export interface CreateBookRequest {
   scan_date: string;
   isbn?: string;
   cover_url?: string;
-  authors: { first_name: string; last_name: string }[];
+  authors: { first_name: string; middle_name?: string; last_name: string }[];
   tag_ids: number[];
 }
 

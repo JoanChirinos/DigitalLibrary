@@ -22,6 +22,7 @@ diesel::table! {
     authors (id) {
         id -> Integer,
         first_name -> Text,
+        middle_name -> Nullable<Text>,
         last_name -> Text,
         library_id -> Integer,
     }

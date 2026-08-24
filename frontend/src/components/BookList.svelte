@@ -18,6 +18,11 @@
     return date.toLocaleString();
   }
 
+  type AuthorName = { first_name: string; middle_name?: string | null; last_name: string };
+  const sameAuthor = (a: AuthorName, b: AuthorName) =>
+    a.first_name === b.first_name && (a.middle_name || '') === (b.middle_name || '') && a.last_name === b.last_name;
+  const authorLabel = (a: AuthorName) => [a.first_name, a.middle_name, a.last_name].filter(Boolean).join(' ');
+
   let sortBy = $state<'title' | 'author' | 'recent'>('author');
   let selectedTags = $state<number[]>([]);
   let searchQuery = $state('');
@@ -29,9 +34,10 @@
   let editTitle = $state('');
   let editIsbn = $state('');
   let editCoverUrl = $state('');
-  let editAuthors = $state<{first_name: string; last_name: string}[]>([]);
+  let editAuthors = $state<{first_name: string; middle_name?: string; last_name: string}[]>([]);
   let editTagIds = $state<number[]>([]);
   let editFirstName = $state('');
+  let editMiddleName = $state('');
   let editLastName = $state('');
   let showEditSuggestions = $state(false);
   let selectedSuggestionIndex = $state(-1);
@@ -42,21 +48,21 @@
   // Author autocomplete for edit
   let allAuthors = $derived(
     Object.values(
-      $books.flatMap(b => b.authors).reduce((acc: Record<string, {first_name: string; last_name: string}>, a) => {
-        acc[`${a.first_name}|${a.last_name}`] = { first_name: a.first_name, last_name: a.last_name };
+      $books.flatMap(b => b.authors).reduce((acc: Record<string, AuthorName>, a) => {
+        acc[`${a.first_name}|${a.middle_name ?? ''}|${a.last_name}`] = { first_name: a.first_name, middle_name: a.middle_name ?? undefined, last_name: a.last_name };
         return acc;
       }, {})
     ).sort((a, b) => a.last_name.localeCompare(b.last_name))
   );
 
-  let authorFuse = $derived(new Fuse(allAuthors, { keys: ['first_name', 'last_name'], threshold: 0.4 }));
+  let authorFuse = $derived(new Fuse(allAuthors, { keys: ['first_name', 'middle_name', 'last_name'], threshold: 0.4 }));
 
   let editAuthorSuggestions = $derived.by(() => {
-    const q = `${editFirstName} ${editLastName}`.trim();
+    const q = `${editFirstName} ${editMiddleName} ${editLastName}`.trim();
     if (!q) return [];
     return authorFuse.search(q)
       .map(r => r.item)
-      .filter(a => !editAuthors.some(x => x.first_name === a.first_name && x.last_name === a.last_name))
+      .filter(a => !editAuthors.some(x => sameAuthor(x, a)))
       .slice(0, 8);
   });
 
@@ -70,7 +76,7 @@
 
   // Fuse.js for fuzzy search
   let fuse = $derived(new Fuse($books, {
-    keys: ['title', 'authors.first_name', 'authors.last_name'],
+    keys: ['title', 'authors.first_name', 'authors.middle_name', 'authors.last_name'],
     threshold: 0.4,
   }));
 
@@ -128,9 +134,10 @@
     editTitle = book.title;
     editIsbn = book.isbn || '';
     editCoverUrl = book.cover_url || '';
-    editAuthors = book.authors.map(a => ({ first_name: a.first_name, last_name: a.last_name }));
+    editAuthors = book.authors.map(a => ({ first_name: a.first_name, middle_name: a.middle_name ?? undefined, last_name: a.last_name }));
     editTagIds = book.tags.map(t => t.id);
     editFirstName = '';
+    editMiddleName = '';
     editLastName = '';
     editNewTagName = '';
     editShowNewTag = false;
@@ -140,25 +147,32 @@
     editingId = null;
     editShowNewTag = false;
     editNewTagName = '';
+    editFirstName = '';
+    editMiddleName = '';
+    editLastName = '';
   }
 
   function addEditAuthor() {
     const fn = editFirstName.trim();
+    const mn = editMiddleName.trim();
     const ln = editLastName.trim();
-    if (fn && ln && !editAuthors.some(a => a.first_name === fn && a.last_name === ln)) {
-      editAuthors = [...editAuthors, { first_name: fn, last_name: ln }];
+    const candidate = { first_name: fn, middle_name: mn || undefined, last_name: ln };
+    if (fn && ln && !editAuthors.some(a => sameAuthor(a, candidate))) {
+      editAuthors = [...editAuthors, candidate];
     }
     editFirstName = '';
+    editMiddleName = '';
     editLastName = '';
     showEditSuggestions = false;
     selectedSuggestionIndex = -1;
   }
 
-  function selectEditAuthor(a: {first_name: string; last_name: string}) {
-    if (!editAuthors.some(x => x.first_name === a.first_name && x.last_name === a.last_name)) {
-      editAuthors = [...editAuthors, a];
+  function selectEditAuthor(a: AuthorName) {
+    if (!editAuthors.some(x => sameAuthor(x, a))) {
+      editAuthors = [...editAuthors, { first_name: a.first_name, middle_name: a.middle_name ?? undefined, last_name: a.last_name }];
     }
     editFirstName = '';
+    editMiddleName = '';
     editLastName = '';
     showEditSuggestions = false;
     selectedSuggestionIndex = -1;
@@ -179,8 +193,8 @@
     }
   }
 
-  function removeEditAuthor(a: {first_name: string; last_name: string}) {
-    editAuthors = editAuthors.filter(x => x.first_name !== a.first_name || x.last_name !== a.last_name);
+  function removeEditAuthor(a: AuthorName) {
+    editAuthors = editAuthors.filter(x => !sameAuthor(x, a));
   }
 
   function toggleEditTag(id: number) {
@@ -381,6 +395,14 @@
                   />
                   <input
                     class="input input-bordered input-sm flex-1"
+                    placeholder="Middle (optional)"
+                    bind:value={editMiddleName}
+                    onfocus={() => showEditSuggestions = true}
+                    onblur={() => setTimeout(() => showEditSuggestions = false, 200)}
+                    onkeydown={handleEditAuthorKeydown}
+                  />
+                  <input
+                    class="input input-bordered input-sm flex-1"
                     placeholder="Last name"
                     bind:value={editLastName}
                     onfocus={() => showEditSuggestions = true}
@@ -392,7 +414,7 @@
                 {#if showEditSuggestions && editAuthorSuggestions.length > 0}
                   <ul class="menu bg-base-100 shadow-lg rounded-box z-10 w-full mt-1 max-h-48 overflow-y-auto">
                     {#each editAuthorSuggestions as suggestion, i}
-                      <li class:bg-base-200={i === selectedSuggestionIndex}><button onmousedown={() => selectEditAuthor(suggestion)}>{suggestion.first_name} {suggestion.last_name}</button></li>
+                      <li class:bg-base-200={i === selectedSuggestionIndex}><button onmousedown={() => selectEditAuthor(suggestion)}>{authorLabel(suggestion)}</button></li>
                     {/each}
                   </ul>
                 {/if}
@@ -400,7 +422,7 @@
                   <div class="flex flex-wrap gap-1 mt-2">
                     {#each editAuthors as author}
                       <button class="badge badge-primary cursor-pointer" onclick={() => removeEditAuthor(author)}>
-                        {author.first_name} {author.last_name} <X size={12} />
+                        {authorLabel(author)} <X size={12} />
                       </button>
                     {/each}
                   </div>
@@ -467,7 +489,7 @@
                 <div class="flex-1">
                   <h3 class="card-title text-base">{book.title}</h3>
                   <p class="text-sm opacity-70">
-                    {book.authors.map(a => `${a.first_name} ${a.last_name}`).join(', ') || 'Unknown author'}
+                    {book.authors.map(authorLabel).join(', ') || 'Unknown author'}
                   </p>
                   <div class="flex flex-wrap gap-1 mt-1">
                     {#each book.tags as tag}
@@ -524,7 +546,7 @@
         <div class="flex-1">
           <h2 class="text-2xl font-bold mb-2">{detailBook.title}</h2>
           <p class="text-lg mb-3">
-            {detailBook.authors.map(a => `${a.first_name} ${a.last_name}`).join(', ') || 'Unknown author'}
+            {detailBook.authors.map(authorLabel).join(', ') || 'Unknown author'}
           </p>
 
           <div class="mb-3">

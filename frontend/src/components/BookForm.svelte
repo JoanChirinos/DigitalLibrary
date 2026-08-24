@@ -23,13 +23,19 @@
     return new Date(date.getTime() - offset).toISOString().slice(0, 19);
   }
 
+  type AuthorName = { first_name: string; middle_name?: string | null; last_name: string };
+  const sameAuthor = (a: AuthorName, b: AuthorName) =>
+    a.first_name === b.first_name && (a.middle_name || '') === (b.middle_name || '') && a.last_name === b.last_name;
+  const authorLabel = (a: AuthorName) => [a.first_name, a.middle_name, a.last_name].filter(Boolean).join(' ');
+
   let title = $state('');
   let scanDate = $state(nowLocal());
   let isbn = $state('');
   let coverUrl = $state('');
   let firstName = $state('');
+  let middleName = $state('');
   let lastName = $state('');
-  let authors = $state<{first_name: string; last_name: string}[]>([]);
+  let authors = $state<{first_name: string; middle_name?: string; last_name: string}[]>([]);
   let selectedTagIds = $state<number[]>([]);
   let showSuggestions = $state(false);
   let selectedSuggestionIndex = $state(-1);
@@ -73,24 +79,24 @@
 
   let allAuthors = $derived(
     Object.values(
-      $books.flatMap(b => b.authors).reduce((acc: Record<string, {first_name: string; last_name: string}>, a) => {
-        acc[`${a.first_name}|${a.last_name}`] = { first_name: a.first_name, last_name: a.last_name };
+      $books.flatMap(b => b.authors).reduce((acc: Record<string, AuthorName>, a) => {
+        acc[`${a.first_name}|${a.middle_name ?? ''}|${a.last_name}`] = { first_name: a.first_name, middle_name: a.middle_name ?? undefined, last_name: a.last_name };
         return acc;
       }, {})
     ).sort((a, b) => a.last_name.localeCompare(b.last_name))
   );
 
   let fuse = $derived(new Fuse(allAuthors, {
-    keys: ['first_name', 'last_name'],
+    keys: ['first_name', 'middle_name', 'last_name'],
     threshold: 0.4,
   }));
 
   let authorSuggestions = $derived.by(() => {
-    const q = `${firstName} ${lastName}`.trim();
+    const q = `${firstName} ${middleName} ${lastName}`.trim();
     if (!q) return [];
     return fuse.search(q)
       .map(r => r.item)
-      .filter(a => !authors.some(x => x.first_name === a.first_name && x.last_name === a.last_name))
+      .filter(a => !authors.some(x => sameAuthor(x, a)))
       .slice(0, 8);
   });
 
@@ -197,31 +203,34 @@
       coverUrl = result.coverUrl || '';
 
       // Parse and match authors
-      const authorFuse = new Fuse(allAuthors, { keys: ['first_name', 'last_name'], threshold: 0.5, includeScore: true });
+      const authorFuse = new Fuse(allAuthors, { keys: ['first_name', 'middle_name', 'last_name'], threshold: 0.5, includeScore: true });
       for (let i = 0; i < result.authors.length; i++) {
         const name = result.authors[i].trim();
-        const parts = name.split(/\s+/);
-        const lastNameParsed = parts.pop() || '';
-        const firstNameParsed = parts.join(' ') || '';
+        const tokens = name.split(/\s+/).filter(Boolean);
+        const lastNameParsed = tokens.length > 1 ? tokens[tokens.length - 1] : (tokens[0] || '');
+        const firstNameParsed = tokens.length > 1 ? tokens[0] : '';
+        const middleNameParsed = tokens.length > 2 ? tokens.slice(1, -1).join(' ') : '';
 
         // Try fuzzy match
-        const matches = authorFuse.search(`${firstNameParsed} ${lastNameParsed}`);
+        const matches = authorFuse.search(`${firstNameParsed} ${middleNameParsed} ${lastNameParsed}`.replace(/\s+/g, ' ').trim());
 
         if (matches.length > 0 && matches[0].score! <= 0.5) {
           // Good match found, add it
           const match = matches[0].item;
-          if (!authors.some(a => a.first_name === match.first_name && a.last_name === match.last_name)) {
-            authors = [...authors, match];
+          if (!authors.some(a => sameAuthor(a, match))) {
+            authors = [...authors, { first_name: match.first_name, middle_name: match.middle_name ?? undefined, last_name: match.last_name }];
           }
-        } else if (parts.length === 0) {
-          // Simple two-word name, auto-add
-          if (!authors.some(a => a.first_name === firstNameParsed && a.last_name === lastNameParsed)) {
-            authors = [...authors, { first_name: firstNameParsed, last_name: lastNameParsed }];
+        } else if (tokens.length <= 1) {
+          // Single-token name, auto-add
+          const candidate = { first_name: firstNameParsed, last_name: lastNameParsed };
+          if (!authors.some(a => sameAuthor(a, candidate))) {
+            authors = [...authors, candidate];
           }
         } else {
-          // Complex name (3+ words), pre-fill fields for first author only
+          // Multi-word name, pre-fill fields for first author only
           if (i === 0 && authors.length === 0) {
             firstName = firstNameParsed;
+            middleName = middleNameParsed;
             lastName = lastNameParsed;
           }
         }
@@ -261,21 +270,25 @@
 
   function addAuthor() {
     const fn = firstName.trim();
+    const mn = middleName.trim();
     const ln = lastName.trim();
-    if (fn && ln && !authors.some(a => a.first_name === fn && a.last_name === ln)) {
-      authors = [...authors, { first_name: fn, last_name: ln }];
+    const candidate = { first_name: fn, middle_name: mn || undefined, last_name: ln };
+    if (fn && ln && !authors.some(a => sameAuthor(a, candidate))) {
+      authors = [...authors, candidate];
     }
     firstName = '';
+    middleName = '';
     lastName = '';
     showSuggestions = false;
     selectedSuggestionIndex = -1;
   }
 
-  function selectAuthor(a: {first_name: string; last_name: string}) {
-    if (!authors.some(x => x.first_name === a.first_name && x.last_name === a.last_name)) {
-      authors = [...authors, a];
+  function selectAuthor(a: AuthorName) {
+    if (!authors.some(x => sameAuthor(x, a))) {
+      authors = [...authors, { first_name: a.first_name, middle_name: a.middle_name ?? undefined, last_name: a.last_name }];
     }
     firstName = '';
+    middleName = '';
     lastName = '';
     showSuggestions = false;
     selectedSuggestionIndex = -1;
@@ -296,8 +309,8 @@
     }
   }
 
-  function removeAuthor(a: {first_name: string; last_name: string}) {
-    authors = authors.filter(x => x.first_name !== a.first_name || x.last_name !== a.last_name);
+  function removeAuthor(a: AuthorName) {
+    authors = authors.filter(x => !sameAuthor(x, a));
   }
 
   function toggleTag(id: number) {
@@ -336,6 +349,7 @@
     coverUrl = '';
     authors = [];
     firstName = '';
+    middleName = '';
     lastName = '';
     selectedTagIds = [];
     isbnInput = '';
@@ -427,6 +441,14 @@
         />
         <input
           class="input input-bordered input-sm flex-1"
+          placeholder="Middle (optional)"
+          bind:value={middleName}
+          onfocus={() => showSuggestions = true}
+          onblur={() => setTimeout(() => showSuggestions = false, 200)}
+          onkeydown={handleAuthorKeydown}
+        />
+        <input
+          class="input input-bordered input-sm flex-1"
           placeholder="Last name"
           bind:value={lastName}
           onfocus={() => showSuggestions = true}
@@ -438,7 +460,7 @@
       {#if showSuggestions && authorSuggestions.length > 0}
         <ul class="menu bg-base-100 shadow-lg rounded-box z-10 w-full mt-1 max-h-48 overflow-y-auto">
           {#each authorSuggestions as suggestion, i}
-            <li class:bg-base-200={i === selectedSuggestionIndex}><button onmousedown={() => selectAuthor(suggestion)}>{suggestion.first_name} {suggestion.last_name}</button></li>
+            <li class:bg-base-200={i === selectedSuggestionIndex}><button onmousedown={() => selectAuthor(suggestion)}>{authorLabel(suggestion)}</button></li>
           {/each}
         </ul>
       {/if}
@@ -446,7 +468,7 @@
         <div class="flex flex-wrap gap-1 mt-2">
           {#each authors as author}
             <button class="badge badge-primary cursor-pointer" onclick={() => removeAuthor(author)}>
-              {author.first_name} {author.last_name} <X size={12} />
+              {authorLabel(author)} <X size={12} />
             </button>
           {/each}
         </div>

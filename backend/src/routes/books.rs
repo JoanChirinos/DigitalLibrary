@@ -33,6 +33,8 @@ struct BookResponse {
 #[derive(Deserialize)]
 pub struct AuthorInput {
     first_name: String,
+    #[serde(default)]
+    middle_name: Option<String>,
     last_name: String,
 }
 
@@ -129,10 +131,17 @@ async fn create_book(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     for a in &req.authors {
-        let author = authors::table
+        let middle = a.middle_name.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        let mut query = authors::table
             .filter(authors::library_id.eq(library_id))
             .filter(authors::first_name.eq(&a.first_name))
             .filter(authors::last_name.eq(&a.last_name))
+            .into_boxed();
+        query = match &middle {
+            Some(m) => query.filter(authors::middle_name.eq(m)),
+            None => query.filter(authors::middle_name.is_null()),
+        };
+        let author = query
             .first::<Author>(&mut conn)
             .optional()
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -142,6 +151,7 @@ async fn create_book(
                 diesel::insert_into(authors::table)
                     .values(&NewAuthor {
                         first_name: a.first_name.clone(),
+                        middle_name: middle.clone(),
                         last_name: a.last_name.clone(),
                         library_id,
                     })
@@ -202,10 +212,17 @@ async fn update_book(
         .execute(&mut conn)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     for a in &req.authors {
-        let author = authors::table
+        let middle = a.middle_name.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        let mut query = authors::table
             .filter(authors::library_id.eq(library_id))
             .filter(authors::first_name.eq(&a.first_name))
             .filter(authors::last_name.eq(&a.last_name))
+            .into_boxed();
+        query = match &middle {
+            Some(m) => query.filter(authors::middle_name.eq(m)),
+            None => query.filter(authors::middle_name.is_null()),
+        };
+        let author = query
             .first::<Author>(&mut conn)
             .optional()
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -215,6 +232,7 @@ async fn update_book(
                 diesel::insert_into(authors::table)
                     .values(&NewAuthor {
                         first_name: a.first_name.clone(),
+                        middle_name: middle.clone(),
                         last_name: a.last_name.clone(),
                         library_id,
                     })

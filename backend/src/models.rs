@@ -49,6 +49,7 @@ pub struct NewBook {
 pub struct Author {
     pub id: i32,
     pub first_name: String,
+    pub middle_name: Option<String>,
     pub last_name: String,
     pub library_id: i32,
 }
@@ -57,6 +58,7 @@ pub struct Author {
 #[diesel(table_name = crate::schema::authors)]
 pub struct NewAuthor {
     pub first_name: String,
+    pub middle_name: Option<String>,
     pub last_name: String,
     pub library_id: i32,
 }
