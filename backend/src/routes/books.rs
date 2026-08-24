@@ -9,6 +9,8 @@ use axum_extra::{
     TypedHeader,
 };
 use diesel::prelude::*;
+use diesel::result::Error;
+use diesel::SqliteConnection;
 use serde::{Deserialize, Serialize};
 use crate::auth::{extract_library_id, TokenStore};
 use crate::db::DbPool;
@@ -68,6 +70,61 @@ fn load_book_response(conn: &mut SqliteConnection, book: Book, library_id: i32) 
     Ok(BookResponse { book, authors: book_authors, tags: book_tags })
 }
 
+/// Find an author in this library by first/middle/last, or create one. Empty or
+/// whitespace-only middle names are normalized to NULL so they don't split
+/// authors. Meant to run inside a transaction.
+fn upsert_author(conn: &mut SqliteConnection, library_id: i32, a: &AuthorInput) -> Result<i32, Error> {
+    let middle = a.middle_name.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let mut query = authors::table
+        .filter(authors::library_id.eq(library_id))
+        .filter(authors::first_name.eq(&a.first_name))
+        .filter(authors::last_name.eq(&a.last_name))
+        .into_boxed();
+    query = match &middle {
+        Some(m) => query.filter(authors::middle_name.eq(m)),
+        None => query.filter(authors::middle_name.is_null()),
+    };
+    if let Some(existing) = query.first::<Author>(conn).optional()? {
+        return Ok(existing.id);
+    }
+    diesel::insert_into(authors::table)
+        .values(&NewAuthor {
+            first_name: a.first_name.clone(),
+            middle_name: middle,
+            last_name: a.last_name.clone(),
+            library_id,
+        })
+        .execute(conn)?;
+    Ok(authors::table
+        .filter(authors::library_id.eq(library_id))
+        .order(authors::id.desc())
+        .first::<Author>(conn)?
+        .id)
+}
+
+/// Replace a book's author links with the given set. Meant to run inside a transaction.
+fn set_book_authors(conn: &mut SqliteConnection, library_id: i32, book_id: i32, authors_in: &[AuthorInput]) -> Result<(), Error> {
+    diesel::delete(book_authors::table.filter(book_authors::book_id.eq(book_id))).execute(conn)?;
+    for a in authors_in {
+        let author_id = upsert_author(conn, library_id, a)?;
+        diesel::insert_into(book_authors::table)
+            .values(&BookAuthor { book_id, author_id })
+            .execute(conn)?;
+    }
+    Ok(())
+}
+
+/// Replace a book's tag links with the given set. Meant to run inside a transaction.
+fn set_book_tags(conn: &mut SqliteConnection, book_id: i32, tag_ids: &[i32]) -> Result<(), Error> {
+    diesel::delete(book_tags::table.filter(book_tags::book_id.eq(book_id))).execute(conn)?;
+    for tag_id in tag_ids {
+        diesel::insert_into(book_tags::table)
+            .values(&BookTag { book_id, tag_id: *tag_id })
+            .execute(conn)?;
+    }
+    Ok(())
+}
+
 async fn list_books(
     State((pool, token_store)): State<(DbPool, TokenStore)>,
     auth: TypedHeader<Authorization<Bearer>>,
@@ -112,71 +169,26 @@ async fn create_book(
     let library_id = extract_library_id(&token_store, auth)?;
     let mut conn = pool.get().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let new_book = NewBook {
-        title: req.title,
-        scan_date: req.scan_date,
-        isbn: req.isbn,
-        cover_url: req.cover_url,
-        library_id,
-        archived: false,
-    };
-    diesel::insert_into(books::table)
-        .values(&new_book)
-        .execute(&mut conn)
+    let book = conn
+        .transaction::<Book, Error, _>(|conn| {
+            let new_book = NewBook {
+                title: req.title.clone(),
+                scan_date: req.scan_date.clone(),
+                isbn: req.isbn.clone(),
+                cover_url: req.cover_url.clone(),
+                library_id,
+                archived: false,
+            };
+            diesel::insert_into(books::table).values(&new_book).execute(conn)?;
+            let book = books::table
+                .filter(books::library_id.eq(library_id))
+                .order(books::id.desc())
+                .first::<Book>(conn)?;
+            set_book_authors(conn, library_id, book.id, &req.authors)?;
+            set_book_tags(conn, book.id, &req.tag_ids)?;
+            Ok(book)
+        })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let book = books::table
-        .filter(books::library_id.eq(library_id))
-        .order(books::id.desc())
-        .first::<Book>(&mut conn)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    for a in &req.authors {
-        let middle = a.middle_name.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-        let mut query = authors::table
-            .filter(authors::library_id.eq(library_id))
-            .filter(authors::first_name.eq(&a.first_name))
-            .filter(authors::last_name.eq(&a.last_name))
-            .into_boxed();
-        query = match &middle {
-            Some(m) => query.filter(authors::middle_name.eq(m)),
-            None => query.filter(authors::middle_name.is_null()),
-        };
-        let author = query
-            .first::<Author>(&mut conn)
-            .optional()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let author_id = match author {
-            Some(existing) => existing.id,
-            None => {
-                diesel::insert_into(authors::table)
-                    .values(&NewAuthor {
-                        first_name: a.first_name.clone(),
-                        middle_name: middle.clone(),
-                        last_name: a.last_name.clone(),
-                        library_id,
-                    })
-                    .execute(&mut conn)
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-                authors::table
-                    .filter(authors::library_id.eq(library_id))
-                    .order(authors::id.desc())
-                    .first::<Author>(&mut conn)
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-                    .id
-            }
-        };
-        diesel::insert_into(book_authors::table)
-            .values(&BookAuthor { book_id: book.id, author_id })
-            .execute(&mut conn)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-
-    for tag_id in &req.tag_ids {
-        diesel::insert_into(book_tags::table)
-            .values(&BookTag { book_id: book.id, tag_id: *tag_id })
-            .execute(&mut conn)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
 
     let resp = load_book_response(&mut conn, book, library_id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -198,75 +210,25 @@ async fn update_book(
         .first::<Book>(&mut conn)
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    diesel::update(books::table.filter(books::library_id.eq(library_id)).find(id))
-        .set((
-            books::title.eq(&req.title),
-            books::scan_date.eq(&req.scan_date),
-            books::isbn.eq(&req.isbn),
-            books::cover_url.eq(&req.cover_url),
-        ))
-        .execute(&mut conn)
+    let book = conn
+        .transaction::<Book, Error, _>(|conn| {
+            diesel::update(books::table.filter(books::library_id.eq(library_id)).find(id))
+                .set((
+                    books::title.eq(&req.title),
+                    books::scan_date.eq(&req.scan_date),
+                    books::isbn.eq(&req.isbn),
+                    books::cover_url.eq(&req.cover_url),
+                ))
+                .execute(conn)?;
+            set_book_authors(conn, library_id, id, &req.authors)?;
+            set_book_tags(conn, id, &req.tag_ids)?;
+            books::table
+                .filter(books::library_id.eq(library_id))
+                .find(id)
+                .first::<Book>(conn)
+        })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    diesel::delete(book_authors::table.filter(book_authors::book_id.eq(id)))
-        .execute(&mut conn)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    for a in &req.authors {
-        let middle = a.middle_name.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-        let mut query = authors::table
-            .filter(authors::library_id.eq(library_id))
-            .filter(authors::first_name.eq(&a.first_name))
-            .filter(authors::last_name.eq(&a.last_name))
-            .into_boxed();
-        query = match &middle {
-            Some(m) => query.filter(authors::middle_name.eq(m)),
-            None => query.filter(authors::middle_name.is_null()),
-        };
-        let author = query
-            .first::<Author>(&mut conn)
-            .optional()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let author_id = match author {
-            Some(existing) => existing.id,
-            None => {
-                diesel::insert_into(authors::table)
-                    .values(&NewAuthor {
-                        first_name: a.first_name.clone(),
-                        middle_name: middle.clone(),
-                        last_name: a.last_name.clone(),
-                        library_id,
-                    })
-                    .execute(&mut conn)
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-                authors::table
-                    .filter(authors::library_id.eq(library_id))
-                    .order(authors::id.desc())
-                    .first::<Author>(&mut conn)
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-                    .id
-            }
-        };
-        diesel::insert_into(book_authors::table)
-            .values(&BookAuthor { book_id: id, author_id })
-            .execute(&mut conn)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-
-    diesel::delete(book_tags::table.filter(book_tags::book_id.eq(id)))
-        .execute(&mut conn)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    for tag_id in &req.tag_ids {
-        diesel::insert_into(book_tags::table)
-            .values(&BookTag { book_id: id, tag_id: *tag_id })
-            .execute(&mut conn)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-
-    let book = books::table
-        .filter(books::library_id.eq(library_id))
-        .find(id)
-        .first::<Book>(&mut conn)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let resp = load_book_response(&mut conn, book, library_id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(resp))
