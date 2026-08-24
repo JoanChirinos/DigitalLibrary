@@ -1,7 +1,11 @@
 use axum::{extract::State, http::StatusCode, routing::{get, post}, Json, Router};
+use axum_extra::{
+    headers::{authorization::Bearer, Authorization},
+    TypedHeader,
+};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::auth::{generate_token, TokenStore};
+use crate::auth::{generate_token, revoke_token, TokenStore};
 use crate::db::DbPool;
 use crate::models::{Library, NewLibrary};
 use crate::schema::libraries;
@@ -11,6 +15,15 @@ pub fn router() -> Router<(DbPool, TokenStore)> {
         .route("/libraries", get(list_libraries))
         .route("/create", post(create_library))
         .route("/login", post(login))
+        .route("/logout", post(logout))
+}
+
+async fn logout(
+    State((_, token_store)): State<(DbPool, TokenStore)>,
+    auth: TypedHeader<Authorization<Bearer>>,
+) -> StatusCode {
+    revoke_token(&token_store, auth.token());
+    StatusCode::NO_CONTENT
 }
 
 #[derive(Deserialize)]

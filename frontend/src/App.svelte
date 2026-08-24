@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { loadBooks, loadTags } from './stores';
+  import { logout as apiLogout } from './api';
   import { Library, Sun, Moon, LogOut } from 'lucide-svelte';
   import BookList from './components/BookList.svelte';
   import BookForm from './components/BookForm.svelte';
@@ -23,7 +24,12 @@
     document.cookie = `theme=${theme}; max-age=31536000; path=/`;
   }
 
-  function logout() {
+  async function logout() {
+    try {
+      await apiLogout();
+    } catch {
+      // Best-effort server-side revoke; clear the client session regardless.
+    }
     document.cookie = 'auth_token=; max-age=0; path=/';
     window.location.reload();
   }

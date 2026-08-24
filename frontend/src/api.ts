@@ -19,6 +19,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json();
 }
 
+// --- Auth ---
+
+export async function logout(): Promise<void> {
+  await fetch(`${BASE}/auth/logout`, { method: 'POST', headers: authHeaders() });
+}
+
 // --- Types ---
 
 export interface Tag {
