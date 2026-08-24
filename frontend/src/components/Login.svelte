@@ -49,7 +49,7 @@
       }
 
       const data = await res.json();
-      document.cookie = `auth_token=${data.token}; max-age=2592000; path=/`;
+      document.cookie = `auth_token=${data.token}; max-age=2592000; path=/; SameSite=Lax${import.meta.env.DEV ? '' : '; Secure'}`;
       window.location.reload();
     } catch (e) {
       error = 'Connection failed';
@@ -77,7 +77,7 @@
       }
 
       const data = await res.json();
-      document.cookie = `auth_token=${data.token}; max-age=2592000; path=/`;
+      document.cookie = `auth_token=${data.token}; max-age=2592000; path=/; SameSite=Lax${import.meta.env.DEV ? '' : '; Secure'}`;
       window.location.reload();
     } catch (e) {
       error = 'Connection failed';
