@@ -196,6 +196,7 @@
 
   function mergeOpenLibraryAuthors(names: string[]) {
     const authorFuse = new Fuse(allAuthors, { keys: ['first_name', 'middle_name', 'last_name'], threshold: 0.5, includeScore: true });
+    let prefilled = false;
     for (let i = 0; i < names.length; i++) {
       const name = names[i].trim();
       const tokens = name.split(/\s+/).filter(Boolean);
@@ -212,19 +213,12 @@
         if (!authors.some(a => sameAuthor(a, match))) {
           authors = [...authors, { first_name: match.first_name, middle_name: match.middle_name ?? undefined, last_name: match.last_name }];
         }
-      } else if (tokens.length <= 1) {
-        // Single-token name, auto-add
-        const candidate = { first_name: firstNameParsed, last_name: lastNameParsed };
-        if (!authors.some(a => sameAuthor(a, candidate))) {
-          authors = [...authors, candidate];
-        }
-      } else {
-        // Multi-word name, pre-fill fields for first author only
-        if (i === 0 && authors.length === 0) {
-          firstName = firstNameParsed;
-          middleName = middleNameParsed;
-          lastName = lastNameParsed;
-        }
+      } else if (!prefilled && !firstName.trim() && !middleName.trim() && !lastName.trim()) {
+        // First unmatched name: pre-fill the fields for review (not added yet)
+        firstName = firstNameParsed;
+        middleName = middleNameParsed;
+        lastName = lastNameParsed;
+        prefilled = true;
       }
     }
   }
