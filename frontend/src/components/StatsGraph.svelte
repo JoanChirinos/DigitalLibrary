@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { Chart, BarController, LineController, BarElement, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend } from 'chart.js';
   import { fetchTotals, fetchByTag, fetchByAuthor, fetchGrowth } from '../api';
   import { tags, showArchived, books } from '../stores';
@@ -129,13 +129,9 @@
     });
   }
 
-  onMount(() => {
-    loadTotals();
-    loadTagChart();
-    loadAuthorChart();
-    loadGrowthChart();
-  });
-
+  // Single load path: this effect runs once on mount and again whenever a
+  // filter/grouping dependency changes, so no separate onMount loader is needed
+  // (having both caused every chart to load twice on first render).
   $effect(() => {
     kindFilter;
     groupBy;
@@ -149,6 +145,12 @@
         loadGrowthChart(),
       ]);
     }
+  });
+
+  onDestroy(() => {
+    tagChart?.destroy();
+    authorChart?.destroy();
+    growthChart?.destroy();
   });
 </script>
 
