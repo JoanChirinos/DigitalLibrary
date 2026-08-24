@@ -495,7 +495,7 @@
         <ul class="menu bg-base-100 rounded-box mt-2 max-h-72 overflow-y-auto">
           {#each titleResults as result}
             <li>
-              <button class="flex gap-3 items-center text-left" onclick={() => selectTitleResult(result)}>
+              <button class="flex gap-3 items-center text-left w-full" onclick={() => selectTitleResult(result)}>
                 {#if result.coverUrl}
                   <img src={result.coverUrl} alt={result.title} class="w-10 h-14 object-cover rounded" loading="lazy" />
                 {:else}
