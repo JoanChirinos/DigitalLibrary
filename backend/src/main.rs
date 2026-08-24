@@ -4,6 +4,7 @@ mod models;
 mod schema;
 mod routes;
 
+use axum::http::HeaderValue;
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
@@ -16,13 +17,18 @@ async fn main() {
 
     let token_store = auth::create_token_store();
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers([
-            axum::http::header::CONTENT_TYPE,
-            axum::http::header::AUTHORIZATION,
-        ]);
+    // Debug builds (local `cargo run`) allow any origin so the Vite dev server
+    // can reach the API; release builds are pinned to the production origin.
+    let cors = if cfg!(debug_assertions) {
+        CorsLayer::new().allow_origin(Any)
+    } else {
+        CorsLayer::new().allow_origin(HeaderValue::from_static("https://library.joanchirinos.com"))
+    }
+    .allow_methods(Any)
+    .allow_headers([
+        axum::http::header::CONTENT_TYPE,
+        axum::http::header::AUTHORIZATION,
+    ]);
 
     // Check if frontend dist exists
     let frontend_path = PathBuf::from("../frontend/dist");
