@@ -492,7 +492,7 @@
         </div>
       {/if}
       {#if titleResults.length > 0}
-        <ul class="menu bg-base-100 rounded-box mt-2 max-h-72 overflow-y-auto">
+        <ul class="menu bg-base-100 rounded-box mt-2 max-h-72 overflow-y-auto w-full">
           {#each titleResults as result}
             <li>
               <button class="flex gap-3 items-center text-left w-full" onclick={() => selectTitleResult(result)}>
