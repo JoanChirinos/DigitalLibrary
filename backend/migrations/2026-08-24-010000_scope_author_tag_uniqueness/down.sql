@@ -1,0 +1,3 @@
+-- Reverting to the global UNIQUE constraints would require another table
+-- rebuild and could fail on data that is only unique per-library. Rollback is
+-- via DB snapshot restore (see deploy.sh), not this down migration.
