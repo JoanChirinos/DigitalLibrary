@@ -123,11 +123,21 @@
   let totalPages = $derived(Math.ceil(filteredBooks.length / perPage));
   let pagedBooks = $derived(filteredBooks.slice((page - 1) * perPage, page * perPage));
 
-  // Reset to page 1 when filters/sort/perPage change
+  // Reset to page 1 when the filter/sort inputs change — but NOT when the book
+  // list itself refreshes (e.g. after archiving/editing), which would yank the
+  // user off the page they're on.
   $effect(() => {
-    filteredBooks;
+    searchQuery;
+    selectedTags;
+    sortBy;
     perPage;
+    $showArchived;
     page = 1;
+  });
+
+  // Keep page in range if the list shrinks under the current page.
+  $effect(() => {
+    if (totalPages > 0 && page > totalPages) page = totalPages;
   });
 
   function startEdit(book: Book) {
