@@ -43,6 +43,7 @@
   let newTagName = $state('');
   let newTagKind = $state('genre');
   let showNewTag = $state(false);
+  let isSubmitting = $state(false);
 
   // ISBN lookup state
   let isbnInput = $state('');
@@ -368,7 +369,8 @@
   }
 
   async function handleSubmit() {
-    if (!title.trim()) return;
+    if (!title.trim() || isSubmitting) return;
+    isSubmitting = true;
     try {
       await createBook({
         title: title.trim(),
@@ -379,6 +381,7 @@
         tag_ids: selectedTagIds,
       });
     } catch {
+      isSubmitting = false;
       return; // error toast already shown; keep the form so nothing is lost
     }
     await loadBooks();
@@ -397,6 +400,7 @@
     titleQuery = '';
     titleResults = [];
     titleSearchError = '';
+    isSubmitting = false;
   }
 </script>
 
@@ -611,7 +615,7 @@
     </div>
 
     <div class="card-actions justify-end mt-3">
-      <button class="btn btn-primary" onclick={handleSubmit} disabled={!title.trim()}>Add Book</button>
+      <button class="btn btn-primary" onclick={handleSubmit} disabled={!title.trim() || isSubmitting}>Add Book</button>
     </div>
   </div>
 </div>

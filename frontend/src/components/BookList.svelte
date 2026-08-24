@@ -44,6 +44,7 @@
   let editNewTagName = $state('');
   let editNewTagKind = $state('genre');
   let editShowNewTag = $state(false);
+  let isSaving = $state(false);
 
   // Author autocomplete for edit
   let allAuthors = $derived(
@@ -217,9 +218,10 @@
   }
 
   async function saveEdit() {
-    if (!editingId || !editTitle.trim()) return;
+    if (!editingId || !editTitle.trim() || isSaving) return;
     const book = $books.find(b => b.id === editingId);
     if (!book) return;
+    isSaving = true;
     try {
       await updateBook(editingId, {
         title: editTitle.trim(),
@@ -230,10 +232,12 @@
         tag_ids: editTagIds,
       });
     } catch {
+      isSaving = false;
       return; // keep the edit form open so changes aren't lost
     }
     await loadBooks();
     editingId = null;
+    isSaving = false;
   }
 
   function toggleTag(id: number) {
@@ -484,7 +488,7 @@
 
               <div class="flex gap-2 justify-end mt-2">
                 <button class="btn btn-sm btn-ghost" onclick={cancelEdit}>Cancel</button>
-                <button class="btn btn-sm btn-primary" onclick={saveEdit} disabled={!editTitle.trim()}>
+                <button class="btn btn-sm btn-primary" onclick={saveEdit} disabled={!editTitle.trim() || isSaving}>
                   <Save size={16} /> Save
                 </button>
               </div>
