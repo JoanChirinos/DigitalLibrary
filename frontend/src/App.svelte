@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { loadBooks, loadTags } from './stores';
   import { logout as apiLogout } from './api';
+  import { toasts, dismissToast } from './toasts';
   import { Library, Sun, Moon, LogOut } from 'lucide-svelte';
   import BookList from './components/BookList.svelte';
   import BookForm from './components/BookForm.svelte';
@@ -89,6 +90,20 @@
       {:else if activeTab === 'stats'}
         <StatsGraph />
       {/if}
+    </div>
+
+    <div class="toast toast-end toast-bottom z-50">
+      {#each $toasts as t (t.id)}
+        <div
+          class="alert"
+          class:alert-error={t.kind === 'error'}
+          class:alert-info={t.kind === 'info'}
+          class:alert-success={t.kind === 'success'}
+        >
+          <span>{t.message}</span>
+          <button class="btn btn-ghost btn-xs" onclick={() => dismissToast(t.id)} aria-label="Dismiss">✕</button>
+        </div>
+      {/each}
     </div>
   </div>
 {/if}

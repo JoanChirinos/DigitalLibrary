@@ -220,14 +220,18 @@
     if (!editingId || !editTitle.trim()) return;
     const book = $books.find(b => b.id === editingId);
     if (!book) return;
-    await updateBook(editingId, {
-      title: editTitle.trim(),
-      scan_date: book.scan_date,
-      isbn: editIsbn || undefined,
-      cover_url: editCoverUrl || undefined,
-      authors: editAuthors,
-      tag_ids: editTagIds,
-    });
+    try {
+      await updateBook(editingId, {
+        title: editTitle.trim(),
+        scan_date: book.scan_date,
+        isbn: editIsbn || undefined,
+        cover_url: editCoverUrl || undefined,
+        authors: editAuthors,
+        tag_ids: editTagIds,
+      });
+    } catch {
+      return; // keep the edit form open so changes aren't lost
+    }
     await loadBooks();
     editingId = null;
   }
@@ -241,12 +245,20 @@
   }
 
   async function handleArchive(id: number) {
-    await toggleArchive(id);
+    try {
+      await toggleArchive(id);
+    } catch {
+      return;
+    }
     await loadBooks();
   }
 
   async function handleDelete(id: number) {
-    await deleteBook(id);
+    try {
+      await deleteBook(id);
+    } catch {
+      return; // keep the confirm dialog open on failure
+    }
     await loadBooks();
     deleteConfirmBook = null;
   }

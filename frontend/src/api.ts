@@ -1,3 +1,5 @@
+import { pushError } from './toasts';
+
 const BASE = import.meta.env.DEV ? 'http://localhost:8008/api' : '/api';
 
 function getAuthToken(): string | null {
@@ -10,13 +12,57 @@ function authHeaders(): HeadersInit {
   return token ? { 'Authorization': `Bearer ${token}` } : {};
 }
 
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * fetch with retries for transient failures (network error or 5xx). Only use
+ * for idempotent requests (GET/PUT/DELETE) — retrying a POST could duplicate.
+ */
+async function apiFetch(url: string, init?: RequestInit, retries = 2): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.status >= 500 && attempt < retries) {
+        await delay(300 * (attempt + 1));
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < retries) await delay(300 * (attempt + 1));
+    }
+  }
+  pushError('Network error — please try again');
+  throw lastErr ?? new Error('Request failed');
+}
+
+function handleUnauthorized() {
+  document.cookie = 'auth_token=; max-age=0; path=/';
+  window.location.reload();
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (res.status === 401) {
-    document.cookie = 'auth_token=; max-age=0; path=/';
-    window.location.reload();
+    handleUnauthorized();
     throw new Error('Unauthorized');
   }
+  if (!res.ok) {
+    pushError(`Request failed (${res.status})`);
+    throw new Error(`Request failed (${res.status})`);
+  }
   return res.json();
+}
+
+async function handleEmpty(res: Response): Promise<void> {
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    pushError(`Request failed (${res.status})`);
+    throw new Error(`Request failed (${res.status})`);
+  }
 }
 
 // --- Auth ---
@@ -63,12 +109,12 @@ export interface CreateBookRequest {
 // --- Books ---
 
 export async function fetchBooks(): Promise<Book[]> {
-  const res = await fetch(`${BASE}/books`, { headers: authHeaders() });
+  const res = await apiFetch(`${BASE}/books`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
 export async function fetchBook(id: number): Promise<Book> {
-  const res = await fetch(`${BASE}/books/${id}`, { headers: authHeaders() });
+  const res = await apiFetch(`${BASE}/books/${id}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
@@ -82,7 +128,7 @@ export async function createBook(book: CreateBookRequest): Promise<Book> {
 }
 
 export async function updateBook(id: number, book: CreateBookRequest): Promise<Book> {
-  const res = await fetch(`${BASE}/books/${id}`, {
+  const res = await apiFetch(`${BASE}/books/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(book),
@@ -91,7 +137,8 @@ export async function updateBook(id: number, book: CreateBookRequest): Promise<B
 }
 
 export async function deleteBook(id: number): Promise<void> {
-  await fetch(`${BASE}/books/${id}`, { method: 'DELETE', headers: authHeaders() });
+  const res = await apiFetch(`${BASE}/books/${id}`, { method: 'DELETE', headers: authHeaders() });
+  await handleEmpty(res);
 }
 
 export async function toggleArchive(id: number): Promise<Book> {
@@ -106,7 +153,7 @@ export async function toggleArchive(id: number): Promise<Book> {
 
 export async function fetchTags(kind?: string): Promise<Tag[]> {
   const url = kind ? `${BASE}/tags?kind=${kind}` : `${BASE}/tags`;
-  const res = await fetch(url, { headers: authHeaders() });
+  const res = await apiFetch(url, { headers: authHeaders() });
   return handleResponse(res);
 }
 
@@ -120,7 +167,8 @@ export async function createTag(name: string, kind: string): Promise<Tag> {
 }
 
 export async function deleteTag(id: number): Promise<void> {
-  await fetch(`${BASE}/tags/${id}`, { method: 'DELETE', headers: authHeaders() });
+  const res = await apiFetch(`${BASE}/tags/${id}`, { method: 'DELETE', headers: authHeaders() });
+  await handleEmpty(res);
 }
 
 // --- Open Library ---

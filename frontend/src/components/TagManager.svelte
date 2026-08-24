@@ -27,13 +27,21 @@
   async function handleCreate() {
     const name = newName.trim();
     if (!name) return;
-    await createTag(name, newKind);
+    try {
+      await createTag(name, newKind);
+    } catch {
+      return;
+    }
     await loadTags();
     newName = '';
   }
 
   async function handleDelete(id: number) {
-    await deleteTag(id);
+    try {
+      await deleteTag(id);
+    } catch {
+      return; // keep the confirm dialog open on failure
+    }
     await loadTags();
     deleteConfirmTag = null;
   }

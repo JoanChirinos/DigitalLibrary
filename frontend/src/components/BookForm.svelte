@@ -369,14 +369,18 @@
 
   async function handleSubmit() {
     if (!title.trim()) return;
-    await createBook({
-      title: title.trim(),
-      scan_date: localToUTC(scanDate),
-      isbn: isbn || undefined,
-      cover_url: coverUrl || undefined,
-      authors,
-      tag_ids: selectedTagIds,
-    });
+    try {
+      await createBook({
+        title: title.trim(),
+        scan_date: localToUTC(scanDate),
+        isbn: isbn || undefined,
+        cover_url: coverUrl || undefined,
+        authors,
+        tag_ids: selectedTagIds,
+      });
+    } catch {
+      return; // error toast already shown; keep the form so nothing is lost
+    }
     await loadBooks();
     title = '';
     scanDate = nowLocal();
