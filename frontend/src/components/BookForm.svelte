@@ -4,7 +4,7 @@
   import type { Tag, TitleSearchResult } from '../api';
   import { Plus, X, Search, Camera, Flashlight } from 'lucide-svelte';
   import Fuse from 'fuse.js';
-  import { onMount, tick } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { Html5Qrcode } from 'html5-qrcode';
 
   function nowLocal() {
@@ -79,6 +79,11 @@
     }, 1000);
 
     return () => clearInterval(interval);
+  });
+
+  onDestroy(() => {
+    // Release the camera if the component is torn down mid-scan.
+    stopScanner();
   });
 
   let canLookup = $derived(lastLookupTime === null || now - lastLookupTime >= 5000);
