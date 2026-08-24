@@ -8,7 +8,7 @@ echo "Installing DigitalLibrary launchd services..."
 echo "Project root: $PROJECT_ROOT"
 
 # Generate backup plist
-sed "s|{{PROJECT_ROOT}}|$PROJECT_ROOT|g" "$SCRIPT_DIR/com.digitallibrary.backup.plist.template" > ~/Library/LaunchAgents/com.digitallibrary.backup.plist
+sed -e "s|{{PROJECT_ROOT}}|$PROJECT_ROOT|g" -e "s|{{HOME}}|$HOME|g" "$SCRIPT_DIR/com.digitallibrary.backup.plist.template" > ~/Library/LaunchAgents/com.digitallibrary.backup.plist
 echo "✓ Created ~/Library/LaunchAgents/com.digitallibrary.backup.plist"
 
 # Generate backend plist

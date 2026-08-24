@@ -1,0 +1,38 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys at once; let an in-flight one finish.
+concurrency:
+  group: deploy-digitallibrary
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, macOS, digitallibrary]
+    steps:
+      - name: Update live checkout to origin/main
+        id: update
+        run: |
+          cd "$HOME/NginxServer/DigitalLibrary"
+          echo "old_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Compile gate (cargo build --release)
+        run: |
+          export PATH="$HOME/.nvm/versions/node/v24.15.0/bin:$PATH"
+          source "$HOME/.cargo/env"
+          cd "$HOME/NginxServer/DigitalLibrary/backend"
+          cargo build --release
+
+      - name: Deploy (snapshot + auto-rollback)
+        env:
+          ROLLBACK_SHA: ${{ steps.update.outputs.old_sha }}
+          SKIP_PULL: "1"
+        run: |
+          cd "$HOME/NginxServer/DigitalLibrary"
+          ./scripts/deploy.sh

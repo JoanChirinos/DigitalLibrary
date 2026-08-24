@@ -19,9 +19,9 @@
     </dict>
     
     <key>StandardOutPath</key>
-    <string>/Users/joanchir/DigitalLibrary-backups/launchd.log</string>
+    <string>{{HOME}}/DigitalLibrary-backups/launchd.log</string>
     
     <key>StandardErrorPath</key>
-    <string>/Users/joanchir/DigitalLibrary-backups/launchd.err</string>
+    <string>{{HOME}}/DigitalLibrary-backups/launchd.err</string>
 </dict>
 </plist>
