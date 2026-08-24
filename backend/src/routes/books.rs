@@ -114,12 +114,18 @@ fn set_book_authors(conn: &mut SqliteConnection, library_id: i32, book_id: i32, 
     Ok(())
 }
 
-/// Replace a book's tag links with the given set. Meant to run inside a transaction.
-fn set_book_tags(conn: &mut SqliteConnection, book_id: i32, tag_ids: &[i32]) -> Result<(), Error> {
+/// Replace a book's tag links with the given set, ignoring any tag ids that
+/// don't belong to this library. Meant to run inside a transaction.
+fn set_book_tags(conn: &mut SqliteConnection, library_id: i32, book_id: i32, tag_ids: &[i32]) -> Result<(), Error> {
     diesel::delete(book_tags::table.filter(book_tags::book_id.eq(book_id))).execute(conn)?;
-    for tag_id in tag_ids {
+    let valid_tag_ids: Vec<i32> = tags::table
+        .filter(tags::library_id.eq(library_id))
+        .filter(tags::id.eq_any(tag_ids))
+        .select(tags::id)
+        .load(conn)?;
+    for tag_id in valid_tag_ids {
         diesel::insert_into(book_tags::table)
-            .values(&BookTag { book_id, tag_id: *tag_id })
+            .values(&BookTag { book_id, tag_id })
             .execute(conn)?;
     }
     Ok(())
@@ -185,7 +191,7 @@ async fn create_book(
                 .order(books::id.desc())
                 .first::<Book>(conn)?;
             set_book_authors(conn, library_id, book.id, &req.authors)?;
-            set_book_tags(conn, book.id, &req.tag_ids)?;
+            set_book_tags(conn, library_id, book.id, &req.tag_ids)?;
             Ok(book)
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -221,7 +227,7 @@ async fn update_book(
                 ))
                 .execute(conn)?;
             set_book_authors(conn, library_id, id, &req.authors)?;
-            set_book_tags(conn, id, &req.tag_ids)?;
+            set_book_tags(conn, library_id, id, &req.tag_ids)?;
             books::table
                 .filter(books::library_id.eq(library_id))
                 .find(id)
