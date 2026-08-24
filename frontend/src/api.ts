@@ -163,6 +163,48 @@ export async function lookupISBN(isbn: string): Promise<ISBNLookupResult> {
   };
 }
 
+export interface TitleSearchResult {
+  title: string;
+  authors: string[];
+  isbn: string | null;
+  coverUrl: string | null;
+  year: number | null;
+}
+
+export async function searchByTitle(title: string): Promise<TitleSearchResult[]> {
+  const q = title.trim();
+  if (!q) return [];
+  const url = `https://openlibrary.org/search.json?title=${encodeURIComponent(q)}&limit=6&fields=title,author_name,first_publish_year,isbn,cover_i`;
+
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    throw new Error('Connection failed');
+  }
+
+  if (res.status === 429) {
+    throw new Error('Rate limited');
+  }
+  if (res.status >= 500) {
+    throw new Error('Service unavailable');
+  }
+  if (!res.ok) {
+    throw new Error('Request failed');
+  }
+
+  const data = await res.json();
+  return (data.docs || [])
+    .map((d: any) => ({
+      title: d.title || '',
+      authors: (d.author_name || []).filter(Boolean),
+      isbn: d.isbn?.[0] || null,
+      coverUrl: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg` : null,
+      year: d.first_publish_year || null,
+    }))
+    .filter((r: TitleSearchResult) => r.title);
+}
+
 // --- Stats ---
 
 export interface Totals {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { books, tags, loadBooks, loadTags } from '../stores';
-  import { createBook, createTag, lookupISBN } from '../api';
-  import type { Tag } from '../api';
+  import { createBook, createTag, lookupISBN, searchByTitle } from '../api';
+  import type { Tag, TitleSearchResult } from '../api';
   import { Plus, X, Search, Camera, Flashlight } from 'lucide-svelte';
   import Fuse from 'fuse.js';
   import { onMount, tick } from 'svelte';
@@ -51,6 +51,12 @@
   let suggestedSubjects = $state<string[]>([]);
   let lastLookupTime = $state<number | null>(null);
   let now = $state(Date.now());
+
+  // Title lookup state
+  let titleQuery = $state('');
+  let titleResults = $state<TitleSearchResult[]>([]);
+  let isSearchingTitle = $state(false);
+  let titleSearchError = $state('');
 
   // Barcode scanner state
   let isScanning = $state(false);
@@ -188,6 +194,41 @@
     }
   }
 
+  function mergeOpenLibraryAuthors(names: string[]) {
+    const authorFuse = new Fuse(allAuthors, { keys: ['first_name', 'middle_name', 'last_name'], threshold: 0.5, includeScore: true });
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i].trim();
+      const tokens = name.split(/\s+/).filter(Boolean);
+      const lastNameParsed = tokens.length > 1 ? tokens[tokens.length - 1] : (tokens[0] || '');
+      const firstNameParsed = tokens.length > 1 ? tokens[0] : '';
+      const middleNameParsed = tokens.length > 2 ? tokens.slice(1, -1).join(' ') : '';
+
+      // Try fuzzy match
+      const matches = authorFuse.search(`${firstNameParsed} ${middleNameParsed} ${lastNameParsed}`.replace(/\s+/g, ' ').trim());
+
+      if (matches.length > 0 && matches[0].score! <= 0.5) {
+        // Good match found, add it
+        const match = matches[0].item;
+        if (!authors.some(a => sameAuthor(a, match))) {
+          authors = [...authors, { first_name: match.first_name, middle_name: match.middle_name ?? undefined, last_name: match.last_name }];
+        }
+      } else if (tokens.length <= 1) {
+        // Single-token name, auto-add
+        const candidate = { first_name: firstNameParsed, last_name: lastNameParsed };
+        if (!authors.some(a => sameAuthor(a, candidate))) {
+          authors = [...authors, candidate];
+        }
+      } else {
+        // Multi-word name, pre-fill fields for first author only
+        if (i === 0 && authors.length === 0) {
+          firstName = firstNameParsed;
+          middleName = middleNameParsed;
+          lastName = lastNameParsed;
+        }
+      }
+    }
+  }
+
   async function handleISBNLookup() {
     lookupError = '';
     suggestedSubjects = [];
@@ -202,39 +243,7 @@
       isbn = isbnInput;
       coverUrl = result.coverUrl || '';
 
-      // Parse and match authors
-      const authorFuse = new Fuse(allAuthors, { keys: ['first_name', 'middle_name', 'last_name'], threshold: 0.5, includeScore: true });
-      for (let i = 0; i < result.authors.length; i++) {
-        const name = result.authors[i].trim();
-        const tokens = name.split(/\s+/).filter(Boolean);
-        const lastNameParsed = tokens.length > 1 ? tokens[tokens.length - 1] : (tokens[0] || '');
-        const firstNameParsed = tokens.length > 1 ? tokens[0] : '';
-        const middleNameParsed = tokens.length > 2 ? tokens.slice(1, -1).join(' ') : '';
-
-        // Try fuzzy match
-        const matches = authorFuse.search(`${firstNameParsed} ${middleNameParsed} ${lastNameParsed}`.replace(/\s+/g, ' ').trim());
-
-        if (matches.length > 0 && matches[0].score! <= 0.5) {
-          // Good match found, add it
-          const match = matches[0].item;
-          if (!authors.some(a => sameAuthor(a, match))) {
-            authors = [...authors, { first_name: match.first_name, middle_name: match.middle_name ?? undefined, last_name: match.last_name }];
-          }
-        } else if (tokens.length <= 1) {
-          // Single-token name, auto-add
-          const candidate = { first_name: firstNameParsed, last_name: lastNameParsed };
-          if (!authors.some(a => sameAuthor(a, candidate))) {
-            authors = [...authors, candidate];
-          }
-        } else {
-          // Multi-word name, pre-fill fields for first author only
-          if (i === 0 && authors.length === 0) {
-            firstName = firstNameParsed;
-            middleName = middleNameParsed;
-            lastName = lastNameParsed;
-          }
-        }
-      }
+      mergeOpenLibraryAuthors(result.authors);
 
       // Auto-select matching genre tags
       const genreTags = ($tags).filter(t => t.kind === 'genre');
@@ -259,6 +268,38 @@
     } finally {
       isLookingUp = false;
     }
+  }
+
+  async function handleTitleSearch() {
+    const q = titleQuery.trim();
+    if (!q || !canLookup) return;
+    titleSearchError = '';
+    isSearchingTitle = true;
+    try {
+      titleResults = await searchByTitle(q);
+      if (titleResults.length === 0) titleSearchError = 'No results found';
+      document.cookie = `lastISBNLookup=${Date.now()}; max-age=300`;
+      lastLookupTime = Date.now();
+    } catch (e: any) {
+      titleSearchError = e.message || 'Search failed';
+    } finally {
+      isSearchingTitle = false;
+    }
+  }
+
+  async function selectTitleResult(r: TitleSearchResult) {
+    titleResults = [];
+    titleSearchError = '';
+    if (r.isbn) {
+      isbnInput = r.isbn;
+      await handleISBNLookup();
+      if (title) return;
+      // ISBN lookup came up empty; fall back to the search data.
+    }
+    title = r.title;
+    scanDate = nowLocal();
+    coverUrl = r.coverUrl || '';
+    mergeOpenLibraryAuthors(r.authors);
   }
 
   async function addSuggestedGenre(subject: string) {
@@ -355,6 +396,9 @@
     isbnInput = '';
     lookupError = '';
     suggestedSubjects = [];
+    titleQuery = '';
+    titleResults = [];
+    titleSearchError = '';
   }
 </script>
 
@@ -412,6 +456,61 @@
             {/each}
           </div>
         </div>
+      {/if}
+    </div>
+
+    <!-- Title Lookup -->
+    <div class="mb-4 p-3 bg-base-200 rounded-lg">
+      <div class="flex gap-2 items-end">
+        <div class="flex-1">
+          <label class="text-sm font-semibold" for="title-lookup-input">Title Lookup</label>
+          <input
+            id="title-lookup-input"
+            class="input input-bordered input-sm w-full mt-1"
+            placeholder="Search by title"
+            bind:value={titleQuery}
+            onkeydown={(e) => { if (e.key === 'Enter' && canLookup && titleQuery.trim()) handleTitleSearch(); }}
+          />
+        </div>
+        <button
+          class="btn btn-sm btn-primary"
+          disabled={!canLookup || !titleQuery.trim() || isSearchingTitle}
+          onclick={handleTitleSearch}
+        >
+          {#if isSearchingTitle}
+            <span class="loading loading-spinner loading-xs"></span>
+          {:else if !canLookup}
+            Wait {timeRemaining}s
+          {:else}
+            <Search size={16} /> Search
+          {/if}
+        </button>
+      </div>
+      {#if titleSearchError}
+        <div class="alert alert-sm mt-2" class:alert-warning={titleSearchError === 'Rate limited'} class:alert-info={titleSearchError !== 'Rate limited'}>
+          {titleSearchError}
+        </div>
+      {/if}
+      {#if titleResults.length > 0}
+        <ul class="menu bg-base-100 rounded-box mt-2 max-h-72 overflow-y-auto">
+          {#each titleResults as result}
+            <li>
+              <button class="flex gap-3 items-center text-left" onclick={() => selectTitleResult(result)}>
+                {#if result.coverUrl}
+                  <img src={result.coverUrl} alt={result.title} class="w-10 h-14 object-cover rounded" loading="lazy" />
+                {:else}
+                  <div class="w-10 h-14 bg-base-300 rounded flex items-center justify-center text-[10px] opacity-50">No cover</div>
+                {/if}
+                <span class="flex-1">
+                  <span class="font-semibold">{result.title}</span>
+                  <span class="block text-xs opacity-70">
+                    {result.authors.join(', ') || 'Unknown author'}{result.year ? ` · ${result.year}` : ''}
+                  </span>
+                </span>
+              </button>
+            </li>
+          {/each}
+        </ul>
       {/if}
     </div>
 
